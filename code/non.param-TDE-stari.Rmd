@@ -1,0 +1,1524 @@
+---
+title: "Non-Parametric ANCOVA tests for for assess TDE score"
+author: Geiser C. Challco <geiser@alumni.usp.br>
+comment: Testes Não Parametricos ANCOVA para determinar se houve diferenças significativas
+         na aprendizagem (medido usando pre- e pos-testes).
+         
+         Non-parametric ANCOVA tests to determine whether there were significant differences
+         in the learning (measured using pre- and post-tests).
+         
+         Author - Geiser C. Challco <geiser@alumni.usp.br>
+         
+         Shiny-Statistic is distributed in the hope that it will be useful,
+         but WITHOUT ANY WARRANTY; without even the implied warranty of
+         MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+         GNU General Public License for more details.
+         
+         You should have received a copy of the GNU General Public License.
+         If not, see <https://www.gnu.org/licenses/>.
+output:
+  github_document:
+    toc: true
+  word_document:
+    toc: true
+  html_document:
+    toc: true
+fontsize: 10pt
+---
+
+
+```{r setup, include=FALSE}
+# Install and Load Packages
+if (!'remotes' %in% rownames(installed.packages())) install.packages('remotes')
+if (!"rshinystatistics" %in% rownames(installed.packages())) {
+  remotes::install_github("geiser/rshinystatistics")
+} else if (packageVersion("rshinystatistics") < "0.0.0.9900") {
+  remotes::install_github("geiser/rshinystatistics")
+}
+
+wants <- c('ggplot2','ggpubr','rshinystatistics','utils','randomcoloR')
+has <- wants %in% rownames(installed.packages())
+if (any(!has)) install.packages(wants[!has])
+
+library(readxl)
+
+library(shiny)
+library(esquisse)
+library(scales)
+library(knitr)
+library(rmarkdown)
+
+library(utils)
+library(ggpubr)
+library(ggplot2)
+library(randomcoloR)
+
+library(plyr)
+library(dplyr)
+
+library(rstatix)
+library(rshinystatistics)
+```
+
+```{r, include=FALSE, purl=FALSE}
+options(knitr.kable.NA = '')
+```
+
+# Setting Initial Variables
+
+```{r}
+dv = "score"
+dv.pos = "score.pos"
+dv.pre = "score.pre"
+dv.dif = "score.dif"
+
+fatores2 <- c("SEXO","ZONA","COR.RACA","LOCAL","SERIE","ESCOLA")
+lfatores2 <- as.list(fatores2)
+names(lfatores2) <- fatores2
+
+fatores1 <- c("STARI.GROUP", fatores2)
+lfatores1 <- as.list(fatores1)
+names(lfatores1) <- fatores1
+
+lfatores <- c(lfatores1)
+
+color <- list()
+color[["prepost"]] = c("#ffee65","#f28e2B")
+color[["STARI.GROUP"]] = c("#89ABE3","#F98866")
+color[["SEXO"]] = c("#FF007F","#4D4DFF")
+color[["ZONA"]] = c("#AA00FF","#00CCCC")
+color[["COR.RACA"]] = c("#b97100","#75c298","#D6B91C","#9F262F","#848283")
+color[["LOCAL"]] = c("#AA00FF","#00CCCC")
+color[["SERIE"]] = c("#FF0000","#BF0040","#0000FF","#4000BF")
+color[["ESCOLA"]] = c("#d8668c","#ff7f7f","#ddf0b2","#b2b2ff","#b299e5")
+
+level <- list()
+level[["STARI.GROUP"]] = c("Control","Experimental")
+level[["SEXO"]] = c("F","M")
+level[["ZONA"]] = c("Rural","Urbana")
+level[["COR.RACA"]] = c("Parda", "Branca", "Amarela", "Indígena", "Preta")
+level[["LOCAL"]] = c("Rural","Urbana")
+level[["SERIE"]] = c("6a","7a","8a","9a")
+level[["ESCOLA"]] = c("PROF MARIA","PADRE ANCHIETA","PROF RICARDO","PADRE MOUSINHO","VER PORFIRIO")
+
+
+# ..
+
+gdat <- read_excel("../data/dat-TDE.xlsx", sheet = "main")
+gdat <- gdat[!is.na(gdat[["STARI.GROUP"]]),]
+gdat <- gdat[!is.na(gdat[[dv.pre]]) & !is.na(gdat[[dv.pos]]),]
+gdat[[dv.dif]] <- gdat[[dv.pos]] - gdat[[dv.pre]] 
+
+gdat <- gdat[is.na(gdat$NECESSIDADE.DEFICIENCIA) & gdat$score.pre != 80 & gdat$score.pos != 80,]
+
+dat <- gdat
+dat$STARI.GROUP <- factor(dat[["STARI.GROUP"]], level[["STARI.GROUP"]])
+for (coln in c(names(lfatores))) {
+  if (length(level[[coln]]) > 0)
+    plevel = level[[coln]][level[[coln]] %in% unique(dat[[coln]])]
+  else
+    plevel = unique(dat[[coln]])[!is.na(unique(dat[[coln]]))]
+  
+  dat[[coln]] <- factor(dat[[coln]], plevel)
+}
+
+dat <- dat[,c("id", names(lfatores), dv.pre, dv.pos, dv.dif)]
+
+dat.long <- rbind(dat, dat)
+dat.long$time <- c(rep("pre", nrow(dat)), rep("pos", nrow(dat)))
+dat.long$time <- factor(dat.long$time, c("pre","pos"))
+dat.long[[dv]] <- c(dat[[dv.pre]], dat[[dv.pos]])
+
+
+for (f in c("STARI.GROUP", names(lfatores))) {
+  if (is.null(color[[f]]) && length(unique(dat[[f]])) > 0) 
+      color[[f]] <- distinctColorPalette(length(unique(dat[[f]])))
+}
+
+for (f in c(fatores2)) {
+  if (is.null(color[[paste0("STARI.GROUP:",f)]]) && length(unique(dat[[f]])) > 0)
+    color[[paste0("STARI.GROUP:",f)]] <- distinctColorPalette(
+      length(unique(dat[["STARI.GROUP"]]))*length(unique(dat[[f]])))
+}
+
+ldat <- list()
+laov <- list()
+lpwc <- list()
+lemms <- list()
+```
+
+# Descriptive Statistics of Initial Data
+
+```{r}
+df <- get.descriptives(dat, c(dv.pre, dv.pos, dv.dif), c("STARI.GROUP"),
+                       symmetry.test = T, normality.test = F)
+df <- plyr::rbind.fill(
+  df, do.call(plyr::rbind.fill, lapply(lfatores2, FUN = function(f) {
+    if (nrow(dat) > 0 && sum(!is.na(unique(dat[[f]]))) > 1)
+      get.descriptives(dat, c(dv.pre,dv.pos), c("STARI.GROUP", f), include.global = F,
+                       symmetry.test = T, normality.test = F)
+    }))
+)
+df <- df[,c("variable",fatores1[fatores1 %in% colnames(df)],
+            colnames(df)[!colnames(df) %in% c(fatores1,"variable")])]
+```
+
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+# One-way factor analysis for: *score ~ GROUP*
+
+```{r}
+pdat = remove_group_data(dat[!is.na(dat[["STARI.GROUP"]]),], "score.dif", "STARI.GROUP")
+
+pdat.long <- rbind(pdat[,c("id","STARI.GROUP")], pdat[,c("id","STARI.GROUP")])
+pdat.long[["time"]] <- c(rep("pre", nrow(pdat)), rep("pos", nrow(pdat)))
+pdat.long[["time"]] <- factor(pdat.long[["time"]], c("pre","pos"))
+pdat.long[["score"]] <- c(pdat[["score.pre"]], pdat[["score.pos"]])
+
+y.position.min <- abs(
+  max(pdat.long[["score"]])
+  - min(pdat.long[["score"]]))/15
+
+lvars = as.list(c("score.dif","score.pos","score.pre"))
+names(lvars) = unlist(lvars)
+```
+
+## Pre-test and Post-test PairWise comparisons for: *score ~ STARI.GROUP*
+
+```{r}
+pwc.long <- group_by(pdat.long, STARI.GROUP) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+df <- pwc.long[,c(".y.","STARI.GROUP","group1","group2","n1","n2","estimate",
+                  "statistic","p.adj","p.adj.signif")]
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+stat.test <- pwc.long %>% add_xy_position(x = "STARI.GROUP", fun = "max")
+stat.test$y.position <- stat.test$y.position + y.position.min
+
+ggboxplot(pdat.long, x = "STARI.GROUP", y = "score",
+          palette = color$prepost, fill = "time") +
+  stat_pvalue_manual(stat.test, tip.length = 0, hide.ns = T,
+                     label = "{ p.adj } ({ p.adj.signif })") + xlab("")
+```
+
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+stat.test <- pwc.long %>% add_xy_position(x = "time", fun = "mean_ci")
+stat.test$y.position <- stat.test$y.position + y.position.min
+
+gg <- ggline(
+  pdat.long, x = "time", y = "score", size = 1.5,
+  facet.by = "STARI.GROUP", add = c("mean_se"), color = "STARI.GROUP",
+  position = position_dodge(width = 0.3), palette = color[["STARI.GROUP"]])
+
+pdat.long$xj = jitter(as.numeric(pdat.long[["time"]]), amount=.1)
+pdat.long$yj = jitter(pdat.long[["score"]], amount = .01)
+
+gg + geom_point(
+  data = pdat.long, aes_string(x="xj",y="yj", color = "STARI.GROUP"), size=0.5) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    position = position_dodge(width = 0.3),
+    label = "{ p.adj } ({ p.adj.signif })") + xlab("") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+
+## Kruskal and Wilcoxon PairWise comparisons for: *score ~ STARI.GROUP*
+
+
+```{r}
+kt <- lapply(lvars, FUN = function(x) {
+  kruskal_test(pdat, as.formula(paste0(x," ~ STARI.GROUP")))  
+})
+
+df <- do.call(rbind.fill, lapply(lvars, function(x) {
+  add_significance(merge(
+    kt[[x]], kruskal_effsize(pdat, as.formula(paste0(x," ~ STARI.GROUP"))),
+    by = c(".y.","n"), suffixes = c("",".ez")))
+}))
+
+df <- df[,c(".y.","n","df","statistic","p","p.signif","effsize","magnitude")]
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+```{r}
+pwc <- lapply(lvars, FUN = function(x) {
+  pairwise_wilcox_test(pdat, as.formula(paste0(x," ~ STARI.GROUP")), detailed = T)  
+})
+
+df <- do.call(rbind.fill, pwc)
+```
+
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+```{r}
+plots <- lapply(lvars, FUN = function(y) {
+  stat.test <- pwc[[y]] %>% add_xy_position(x = "STARI.GROUP")
+  stat.test$y.position <- stat.test$y.position + y.position.min
+  ggboxplot(pdat, x = "STARI.GROUP", y = y, fill = "STARI.GROUP",
+            palette = color[["STARI.GROUP"]]) +
+    stat_pvalue_manual(stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+                       label="{ p.adj } ({ p.adj.signif })") + xlab("")
+})
+```
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+egg::ggarrange(plots[["score.pre"]], plots[["score.pos"]], nrow = 1)
+```
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+plots[["score.dif"]] +
+  labs(subtitle = get_test_label(kt[["score.dif"]], detailed = T),
+       caption = get_pwc_label(pwc[["score.dif"]])) +
+  ylab("score (dif)")  +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+
+
+# Two-way factor analysis for: *score ~ GROUP:SEXO*
+
+
+```{r}
+pdat = remove_group_data(
+  dat[!is.na(dat[["STARI.GROUP"]]) & !is.na(dat[["SEXO"]]),],
+  "score.dif", c("STARI.GROUP","SEXO"))
+
+pdat.long <- rbind(pdat[,c("id","STARI.GROUP","SEXO")],
+                   pdat[,c("id","STARI.GROUP","SEXO")])
+pdat.long[["time"]] <- c(rep("pre", nrow(pdat)), rep("pos", nrow(pdat)))
+pdat.long[["time"]] <- factor(pdat.long[["time"]], c("pre","pos"))
+pdat.long[["score"]] <- c(pdat[["score.pre"]], pdat[["score.pos"]])
+
+y.position.min <- abs(
+  max(pdat.long[["score"]])
+  - min(pdat.long[["score"]]))/15
+
+lvars = as.list(c("score.dif","score.pos","score.pre"))
+names(lvars) = unlist(lvars)
+```
+
+## Pre-test and Post-test PairWise comparisons for: *score ~ STARI.GROUP:SEXO*
+
+```{r}
+pwc.long <- group_by(pdat.long, STARI.GROUP:SEXO) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+df <- pwc.long[,c(".y.","STARI.GROUP:SEXO","group1","group2","n1","n2","estimate",
+                  "statistic","p.adj","p.adj.signif")]
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+stat.test <- pwc.long %>% add_xy_position(x = "STARI.GROUP:SEXO", fun = "max")
+sidx = which(stat.test$p.adj.signif != "ns")
+stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+
+pdat.long[[paste0(c("STARI.GROUP","SEXO"), collapse = ":")]] = apply(
+  pdat.long[, c("STARI.GROUP","SEXO")], 1, paste0, collapse = ":")
+
+ggboxplot(pdat.long, x = "STARI.GROUP:SEXO", y = "score",
+          palette = color$prepost, fill = "time") +
+  stat_pvalue_manual(stat.test, tip.length = 0, hide.ns = T,
+                     label = "{ p.adj } ({ p.adj.signif })") + xlab("")
+```
+
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+pwc.long <- group_by(pdat.long, STARI.GROUP, SEXO) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+stat.test <- pwc.long %>% add_xy_position(x = "time", fun = "mean_se")
+sidx = which(stat.test$p.adj.signif != "ns")
+stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+
+gg <- ggline(
+  pdat.long, x = "time", y = "score",
+  color = "SEXO", linetype = "SEXO", shape = "SEXO", size = 1.5,
+  facet.by = "STARI.GROUP", add = c("mean_se"),
+  position = position_dodge(width = 0.3), palette = color[["SEXO"]])
+
+pdat.long$xj = jitter(as.numeric(pdat.long[["time"]]), amount=.1)
+pdat.long$yj = jitter(pdat.long[["score"]], amount = .01)
+
+gg + geom_point(
+  data = pdat.long, aes_string(x="xj",y="yj",colour="SEXO"), size=0.5) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    position = position_dodge(width = 0.3), color = "SEXO",
+    label = "{ p.adj } ({ p.adj.signif })") + xlab("") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+## Scheirer and Wilcoxon PairWise comparisons for: *score ~ STARI.GROUP:SEXO*
+
+
+```{r}
+sch <- lapply(lvars, FUN = function(x) {
+  scheirer.test(pdat, x, c("STARI.GROUP","SEXO"), as.table = T) 
+})
+df <- do.call(rbind.fill, sch)
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+```{r}
+pwc <- lapply(lvars, FUN = function(x) {
+  list(
+    STARI.GROUP = tryCatch(pairwise_wilcox_test(group_by(pdat, SEXO),
+                                 as.formula(paste0(x," ~ STARI.GROUP")), detailed = T)
+                         , error = function(e) NULL),
+    SEXO = tryCatch(pairwise_wilcox_test(group_by(pdat, STARI.GROUP),
+                                 as.formula(paste0(x," ~ SEXO")), detailed = T)
+                         , error = function(e) NULL)
+  )
+})
+
+df <- do.call(rbind.fill, lapply(pwc, FUN =  function(x) {
+  do.call(rbind.fill, x)
+}))
+
+ivs = c()
+if ("STARI.GROUP" %in% colnames(df)) ivs = c(ivs, "STARI.GROUP")
+if ("SEXO" %in% colnames(df)) ivs = c(ivs, "SEXO")
+df <- df[,c(".y.",ivs,"group1","group2","n1","n2","estimate",
+            "statistic","p.adj","p.adj.signif")]
+```
+
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+```{r}
+plots <- lapply(lvars, FUN = function(y) {
+  livs = list("STARI.GROUP", "SEXO")
+  names(livs) = unlist(livs)
+  lapply(livs, FUN = function(x) {
+    iv2 = setdiff(names(livs), x)
+    if (!is.null(pwc[[y]][[iv2]])) {
+      stat.test <- pwc[[y]][[iv2]] %>% add_xy_position(x = x, fun = "max")
+      sidx = which(stat.test$p.adj.signif != "ns")
+      stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+      
+      ggboxplot(pdat, x = x, y = y, fill = iv2, palette = color[[iv2]]) +
+        stat_pvalue_manual(stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+                           label="{ p.adj } ({ p.adj.signif })") + xlab("")
+    }
+  })
+})
+```
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["STARI.GROUP"]]) &&
+    !is.null(plots[["score.pos"]][["STARI.GROUP"]])) {
+  egg::ggarrange(plots[["score.pre"]][["STARI.GROUP"]],
+                 plots[["score.pos"]][["STARI.GROUP"]], nrow = 1)  
+}
+```
+
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["SEXO"]]) &&
+    !is.null(plots[["score.pos"]][["SEXO"]])) {
+  egg::ggarrange(plots[["score.pre"]][["SEXO"]],
+                 plots[["score.pos"]][["SEXO"]], nrow = 1)
+}
+```
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "STARI.GROUP:SEXO") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["STARI.GROUP"]]))
+  plots[["score.dif"]][["STARI.GROUP"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["SEXO"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "STARI.GROUP:SEXO") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["SEXO"]]))
+  plots[["score.dif"]][["SEXO"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["STARI.GROUP"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+
+
+
+
+# Two-way factor analysis for: *score ~ GROUP:ZONA*
+
+
+```{r}
+pdat = remove_group_data(
+  dat[!is.na(dat[["STARI.GROUP"]]) & !is.na(dat[["ZONA"]]),],
+  "score.dif", c("STARI.GROUP","ZONA"))
+
+pdat.long <- rbind(pdat[,c("id","STARI.GROUP","ZONA")],
+                   pdat[,c("id","STARI.GROUP","ZONA")])
+pdat.long[["time"]] <- c(rep("pre", nrow(pdat)), rep("pos", nrow(pdat)))
+pdat.long[["time"]] <- factor(pdat.long[["time"]], c("pre","pos"))
+pdat.long[["score"]] <- c(pdat[["score.pre"]], pdat[["score.pos"]])
+
+y.position.min <- abs(
+  max(pdat.long[["score"]])
+  - min(pdat.long[["score"]]))/15
+
+lvars = as.list(c("score.dif","score.pos","score.pre"))
+names(lvars) = unlist(lvars)
+```
+
+## Pre-test and Post-test PairWise comparisons for: *score ~ STARI.GROUP:ZONA*
+
+```{r}
+pwc.long <- group_by(pdat.long, STARI.GROUP:ZONA) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+df <- pwc.long[,c(".y.","STARI.GROUP:ZONA","group1","group2","n1","n2","estimate",
+                  "statistic","p.adj","p.adj.signif")]
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+stat.test <- pwc.long %>% add_xy_position(x = "STARI.GROUP:ZONA", fun = "max")
+sidx = which(stat.test$p.adj.signif != "ns")
+stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+
+pdat.long[[paste0(c("STARI.GROUP","ZONA"), collapse = ":")]] = apply(
+  pdat.long[, c("STARI.GROUP","ZONA")], 1, paste0, collapse = ":")
+
+ggboxplot(pdat.long, x = "STARI.GROUP:ZONA", y = "score",
+          palette = color$prepost, fill = "time") +
+  stat_pvalue_manual(stat.test, tip.length = 0, hide.ns = T,
+                     label = "{ p.adj } ({ p.adj.signif })") + xlab("")
+```
+
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+pwc.long <- group_by(pdat.long, STARI.GROUP, ZONA) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+stat.test <- pwc.long %>% add_xy_position(x = "time", fun = "mean_se")
+sidx = which(stat.test$p.adj.signif != "ns")
+stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+
+gg <- ggline(
+  pdat.long, x = "time", y = "score",
+  color = "ZONA", linetype = "ZONA", shape = "ZONA", size = 1.5,
+  facet.by = "STARI.GROUP", add = c("mean_se"),
+  position = position_dodge(width = 0.3), palette = color[["ZONA"]])
+
+pdat.long$xj = jitter(as.numeric(pdat.long[["time"]]), amount=.1)
+pdat.long$yj = jitter(pdat.long[["score"]], amount = .01)
+
+gg + geom_point(
+  data = pdat.long, aes_string(x="xj",y="yj",colour="ZONA"), size=0.5) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    position = position_dodge(width = 0.3), color = "ZONA",
+    label = "{ p.adj } ({ p.adj.signif })") + xlab("") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+## Scheirer and Wilcoxon PairWise comparisons for: *score ~ STARI.GROUP:ZONA*
+
+
+```{r}
+sch <- lapply(lvars, FUN = function(x) {
+  scheirer.test(pdat, x, c("STARI.GROUP","ZONA"), as.table = T) 
+})
+df <- do.call(rbind.fill, sch)
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+```{r}
+pwc <- lapply(lvars, FUN = function(x) {
+  list(
+    STARI.GROUP = tryCatch(pairwise_wilcox_test(group_by(pdat, ZONA),
+                                 as.formula(paste0(x," ~ STARI.GROUP")), detailed = T)
+                         , error = function(e) NULL),
+    ZONA = tryCatch(pairwise_wilcox_test(group_by(pdat, STARI.GROUP),
+                                 as.formula(paste0(x," ~ ZONA")), detailed = T)
+                         , error = function(e) NULL)
+  )
+})
+
+df <- do.call(rbind.fill, lapply(pwc, FUN =  function(x) {
+  do.call(rbind.fill, x)
+}))
+
+ivs = c()
+if ("STARI.GROUP" %in% colnames(df)) ivs = c(ivs, "STARI.GROUP")
+if ("ZONA" %in% colnames(df)) ivs = c(ivs, "ZONA")
+df <- df[,c(".y.",ivs,"group1","group2","n1","n2","estimate",
+            "statistic","p.adj","p.adj.signif")]
+```
+
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+```{r}
+plots <- lapply(lvars, FUN = function(y) {
+  livs = list("STARI.GROUP", "ZONA")
+  names(livs) = unlist(livs)
+  lapply(livs, FUN = function(x) {
+    iv2 = setdiff(names(livs), x)
+    if (!is.null(pwc[[y]][[iv2]])) {
+      stat.test <- pwc[[y]][[iv2]] %>% add_xy_position(x = x, fun = "max")
+      sidx = which(stat.test$p.adj.signif != "ns")
+      stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+      
+      ggboxplot(pdat, x = x, y = y, fill = iv2, palette = color[[iv2]]) +
+        stat_pvalue_manual(stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+                           label="{ p.adj } ({ p.adj.signif })") + xlab("")
+    }
+  })
+})
+```
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["STARI.GROUP"]]) &&
+    !is.null(plots[["score.pos"]][["STARI.GROUP"]])) {
+  egg::ggarrange(plots[["score.pre"]][["STARI.GROUP"]],
+                 plots[["score.pos"]][["STARI.GROUP"]], nrow = 1)  
+}
+```
+
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["ZONA"]]) &&
+    !is.null(plots[["score.pos"]][["ZONA"]])) {
+  egg::ggarrange(plots[["score.pre"]][["ZONA"]],
+                 plots[["score.pos"]][["ZONA"]], nrow = 1)
+}
+```
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "STARI.GROUP:ZONA") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["STARI.GROUP"]]))
+  plots[["score.dif"]][["STARI.GROUP"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["ZONA"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "STARI.GROUP:ZONA") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["ZONA"]]))
+  plots[["score.dif"]][["ZONA"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["STARI.GROUP"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+
+
+
+
+# Two-way factor analysis for: *score ~ GROUP:COR.RACA*
+
+
+```{r}
+pdat = remove_group_data(
+  dat[!is.na(dat[["STARI.GROUP"]]) & !is.na(dat[["COR.RACA"]]),],
+  "score.dif", c("STARI.GROUP","COR.RACA"))
+
+pdat.long <- rbind(pdat[,c("id","STARI.GROUP","COR.RACA")],
+                   pdat[,c("id","STARI.GROUP","COR.RACA")])
+pdat.long[["time"]] <- c(rep("pre", nrow(pdat)), rep("pos", nrow(pdat)))
+pdat.long[["time"]] <- factor(pdat.long[["time"]], c("pre","pos"))
+pdat.long[["score"]] <- c(pdat[["score.pre"]], pdat[["score.pos"]])
+
+y.position.min <- abs(
+  max(pdat.long[["score"]])
+  - min(pdat.long[["score"]]))/15
+
+lvars = as.list(c("score.dif","score.pos","score.pre"))
+names(lvars) = unlist(lvars)
+```
+
+## Pre-test and Post-test PairWise comparisons for: *score ~ STARI.GROUP:COR.RACA*
+
+```{r}
+pwc.long <- group_by(pdat.long, STARI.GROUP:COR.RACA) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+df <- pwc.long[,c(".y.","STARI.GROUP:COR.RACA","group1","group2","n1","n2","estimate",
+                  "statistic","p.adj","p.adj.signif")]
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+stat.test <- pwc.long %>% add_xy_position(x = "STARI.GROUP:COR.RACA", fun = "max")
+sidx = which(stat.test$p.adj.signif != "ns")
+stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+
+pdat.long[[paste0(c("STARI.GROUP","COR.RACA"), collapse = ":")]] = apply(
+  pdat.long[, c("STARI.GROUP","COR.RACA")], 1, paste0, collapse = ":")
+
+ggboxplot(pdat.long, x = "STARI.GROUP:COR.RACA", y = "score",
+          palette = color$prepost, fill = "time") +
+  stat_pvalue_manual(stat.test, tip.length = 0, hide.ns = T,
+                     label = "{ p.adj } ({ p.adj.signif })") + xlab("")
+```
+
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+pwc.long <- group_by(pdat.long, STARI.GROUP, COR.RACA) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+stat.test <- pwc.long %>% add_xy_position(x = "time", fun = "mean_se")
+sidx = which(stat.test$p.adj.signif != "ns")
+stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+
+gg <- ggline(
+  pdat.long, x = "time", y = "score",
+  color = "COR.RACA", linetype = "COR.RACA", shape = "COR.RACA", size = 1.5,
+  facet.by = "STARI.GROUP", add = c("mean_se"),
+  position = position_dodge(width = 0.3), palette = color[["COR.RACA"]])
+
+pdat.long$xj = jitter(as.numeric(pdat.long[["time"]]), amount=.1)
+pdat.long$yj = jitter(pdat.long[["score"]], amount = .01)
+
+gg + geom_point(
+  data = pdat.long, aes_string(x="xj",y="yj",colour="COR.RACA"), size=0.5) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    position = position_dodge(width = 0.3), color = "COR.RACA",
+    label = "{ p.adj } ({ p.adj.signif })") + xlab("") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+## Scheirer and Wilcoxon PairWise comparisons for: *score ~ STARI.GROUP:COR.RACA*
+
+
+```{r}
+sch <- lapply(lvars, FUN = function(x) {
+  scheirer.test(pdat, x, c("STARI.GROUP","COR.RACA"), as.table = T) 
+})
+df <- do.call(rbind.fill, sch)
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+```{r}
+pwc <- lapply(lvars, FUN = function(x) {
+  list(
+    STARI.GROUP = tryCatch(pairwise_wilcox_test(group_by(pdat, COR.RACA),
+                                 as.formula(paste0(x," ~ STARI.GROUP")), detailed = T)
+                         , error = function(e) NULL),
+    COR.RACA = tryCatch(pairwise_wilcox_test(group_by(pdat, STARI.GROUP),
+                                 as.formula(paste0(x," ~ COR.RACA")), detailed = T)
+                         , error = function(e) NULL)
+  )
+})
+
+df <- do.call(rbind.fill, lapply(pwc, FUN =  function(x) {
+  do.call(rbind.fill, x)
+}))
+
+ivs = c()
+if ("STARI.GROUP" %in% colnames(df)) ivs = c(ivs, "STARI.GROUP")
+if ("COR.RACA" %in% colnames(df)) ivs = c(ivs, "COR.RACA")
+df <- df[,c(".y.",ivs,"group1","group2","n1","n2","estimate",
+            "statistic","p.adj","p.adj.signif")]
+```
+
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+```{r}
+plots <- lapply(lvars, FUN = function(y) {
+  livs = list("STARI.GROUP", "COR.RACA")
+  names(livs) = unlist(livs)
+  lapply(livs, FUN = function(x) {
+    iv2 = setdiff(names(livs), x)
+    if (!is.null(pwc[[y]][[iv2]])) {
+      stat.test <- pwc[[y]][[iv2]] %>% add_xy_position(x = x, fun = "max")
+      sidx = which(stat.test$p.adj.signif != "ns")
+      stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+      
+      ggboxplot(pdat, x = x, y = y, fill = iv2, palette = color[[iv2]]) +
+        stat_pvalue_manual(stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+                           label="{ p.adj } ({ p.adj.signif })") + xlab("")
+    }
+  })
+})
+```
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["STARI.GROUP"]]) &&
+    !is.null(plots[["score.pos"]][["STARI.GROUP"]])) {
+  egg::ggarrange(plots[["score.pre"]][["STARI.GROUP"]],
+                 plots[["score.pos"]][["STARI.GROUP"]], nrow = 1)  
+}
+```
+
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["COR.RACA"]]) &&
+    !is.null(plots[["score.pos"]][["COR.RACA"]])) {
+  egg::ggarrange(plots[["score.pre"]][["COR.RACA"]],
+                 plots[["score.pos"]][["COR.RACA"]], nrow = 1)
+}
+```
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "STARI.GROUP:COR.RACA") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["STARI.GROUP"]]))
+  plots[["score.dif"]][["STARI.GROUP"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["COR.RACA"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "STARI.GROUP:COR.RACA") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["COR.RACA"]]))
+  plots[["score.dif"]][["COR.RACA"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["STARI.GROUP"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+
+
+
+
+# Two-way factor analysis for: *score ~ GROUP:LOCAL*
+
+
+```{r}
+pdat = remove_group_data(
+  dat[!is.na(dat[["STARI.GROUP"]]) & !is.na(dat[["LOCAL"]]),],
+  "score.dif", c("STARI.GROUP","LOCAL"))
+
+pdat.long <- rbind(pdat[,c("id","STARI.GROUP","LOCAL")],
+                   pdat[,c("id","STARI.GROUP","LOCAL")])
+pdat.long[["time"]] <- c(rep("pre", nrow(pdat)), rep("pos", nrow(pdat)))
+pdat.long[["time"]] <- factor(pdat.long[["time"]], c("pre","pos"))
+pdat.long[["score"]] <- c(pdat[["score.pre"]], pdat[["score.pos"]])
+
+y.position.min <- abs(
+  max(pdat.long[["score"]])
+  - min(pdat.long[["score"]]))/15
+
+lvars = as.list(c("score.dif","score.pos","score.pre"))
+names(lvars) = unlist(lvars)
+```
+
+## Pre-test and Post-test PairWise comparisons for: *score ~ STARI.GROUP:LOCAL*
+
+```{r}
+pwc.long <- group_by(pdat.long, STARI.GROUP:LOCAL) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+df <- pwc.long[,c(".y.","STARI.GROUP:LOCAL","group1","group2","n1","n2","estimate",
+                  "statistic","p.adj","p.adj.signif")]
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+stat.test <- pwc.long %>% add_xy_position(x = "STARI.GROUP:LOCAL", fun = "max")
+sidx = which(stat.test$p.adj.signif != "ns")
+stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+
+pdat.long[[paste0(c("STARI.GROUP","LOCAL"), collapse = ":")]] = apply(
+  pdat.long[, c("STARI.GROUP","LOCAL")], 1, paste0, collapse = ":")
+
+ggboxplot(pdat.long, x = "STARI.GROUP:LOCAL", y = "score",
+          palette = color$prepost, fill = "time") +
+  stat_pvalue_manual(stat.test, tip.length = 0, hide.ns = T,
+                     label = "{ p.adj } ({ p.adj.signif })") + xlab("")
+```
+
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+pwc.long <- group_by(pdat.long, STARI.GROUP, LOCAL) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+stat.test <- pwc.long %>% add_xy_position(x = "time", fun = "mean_se")
+sidx = which(stat.test$p.adj.signif != "ns")
+stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+
+gg <- ggline(
+  pdat.long, x = "time", y = "score",
+  color = "LOCAL", linetype = "LOCAL", shape = "LOCAL", size = 1.5,
+  facet.by = "STARI.GROUP", add = c("mean_se"),
+  position = position_dodge(width = 0.3), palette = color[["LOCAL"]])
+
+pdat.long$xj = jitter(as.numeric(pdat.long[["time"]]), amount=.1)
+pdat.long$yj = jitter(pdat.long[["score"]], amount = .01)
+
+gg + geom_point(
+  data = pdat.long, aes_string(x="xj",y="yj",colour="LOCAL"), size=0.5) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    position = position_dodge(width = 0.3), color = "LOCAL",
+    label = "{ p.adj } ({ p.adj.signif })") + xlab("") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+## Scheirer and Wilcoxon PairWise comparisons for: *score ~ STARI.GROUP:LOCAL*
+
+
+```{r}
+sch <- lapply(lvars, FUN = function(x) {
+  scheirer.test(pdat, x, c("STARI.GROUP","LOCAL"), as.table = T) 
+})
+df <- do.call(rbind.fill, sch)
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+```{r}
+pwc <- lapply(lvars, FUN = function(x) {
+  list(
+    STARI.GROUP = tryCatch(pairwise_wilcox_test(group_by(pdat, LOCAL),
+                                 as.formula(paste0(x," ~ STARI.GROUP")), detailed = T)
+                         , error = function(e) NULL),
+    LOCAL = tryCatch(pairwise_wilcox_test(group_by(pdat, STARI.GROUP),
+                                 as.formula(paste0(x," ~ LOCAL")), detailed = T)
+                         , error = function(e) NULL)
+  )
+})
+
+df <- do.call(rbind.fill, lapply(pwc, FUN =  function(x) {
+  do.call(rbind.fill, x)
+}))
+
+ivs = c()
+if ("STARI.GROUP" %in% colnames(df)) ivs = c(ivs, "STARI.GROUP")
+if ("LOCAL" %in% colnames(df)) ivs = c(ivs, "LOCAL")
+df <- df[,c(".y.",ivs,"group1","group2","n1","n2","estimate",
+            "statistic","p.adj","p.adj.signif")]
+```
+
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+```{r}
+plots <- lapply(lvars, FUN = function(y) {
+  livs = list("STARI.GROUP", "LOCAL")
+  names(livs) = unlist(livs)
+  lapply(livs, FUN = function(x) {
+    iv2 = setdiff(names(livs), x)
+    if (!is.null(pwc[[y]][[iv2]])) {
+      stat.test <- pwc[[y]][[iv2]] %>% add_xy_position(x = x, fun = "max")
+      sidx = which(stat.test$p.adj.signif != "ns")
+      stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+      
+      ggboxplot(pdat, x = x, y = y, fill = iv2, palette = color[[iv2]]) +
+        stat_pvalue_manual(stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+                           label="{ p.adj } ({ p.adj.signif })") + xlab("")
+    }
+  })
+})
+```
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["STARI.GROUP"]]) &&
+    !is.null(plots[["score.pos"]][["STARI.GROUP"]])) {
+  egg::ggarrange(plots[["score.pre"]][["STARI.GROUP"]],
+                 plots[["score.pos"]][["STARI.GROUP"]], nrow = 1)  
+}
+```
+
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["LOCAL"]]) &&
+    !is.null(plots[["score.pos"]][["LOCAL"]])) {
+  egg::ggarrange(plots[["score.pre"]][["LOCAL"]],
+                 plots[["score.pos"]][["LOCAL"]], nrow = 1)
+}
+```
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "STARI.GROUP:LOCAL") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["STARI.GROUP"]]))
+  plots[["score.dif"]][["STARI.GROUP"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["LOCAL"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "STARI.GROUP:LOCAL") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["LOCAL"]]))
+  plots[["score.dif"]][["LOCAL"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["STARI.GROUP"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+
+
+
+
+# Two-way factor analysis for: *score ~ GROUP:SERIE*
+
+
+```{r}
+pdat = remove_group_data(
+  dat[!is.na(dat[["STARI.GROUP"]]) & !is.na(dat[["SERIE"]]),],
+  "score.dif", c("STARI.GROUP","SERIE"))
+
+pdat.long <- rbind(pdat[,c("id","STARI.GROUP","SERIE")],
+                   pdat[,c("id","STARI.GROUP","SERIE")])
+pdat.long[["time"]] <- c(rep("pre", nrow(pdat)), rep("pos", nrow(pdat)))
+pdat.long[["time"]] <- factor(pdat.long[["time"]], c("pre","pos"))
+pdat.long[["score"]] <- c(pdat[["score.pre"]], pdat[["score.pos"]])
+
+y.position.min <- abs(
+  max(pdat.long[["score"]])
+  - min(pdat.long[["score"]]))/15
+
+lvars = as.list(c("score.dif","score.pos","score.pre"))
+names(lvars) = unlist(lvars)
+```
+
+## Pre-test and Post-test PairWise comparisons for: *score ~ STARI.GROUP:SERIE*
+
+```{r}
+pwc.long <- group_by(pdat.long, STARI.GROUP:SERIE) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+df <- pwc.long[,c(".y.","STARI.GROUP:SERIE","group1","group2","n1","n2","estimate",
+                  "statistic","p.adj","p.adj.signif")]
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+stat.test <- pwc.long %>% add_xy_position(x = "STARI.GROUP:SERIE", fun = "max")
+sidx = which(stat.test$p.adj.signif != "ns")
+stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+
+pdat.long[[paste0(c("STARI.GROUP","SERIE"), collapse = ":")]] = apply(
+  pdat.long[, c("STARI.GROUP","SERIE")], 1, paste0, collapse = ":")
+
+ggboxplot(pdat.long, x = "STARI.GROUP:SERIE", y = "score",
+          palette = color$prepost, fill = "time") +
+  stat_pvalue_manual(stat.test, tip.length = 0, hide.ns = T,
+                     label = "{ p.adj } ({ p.adj.signif })") + xlab("")
+```
+
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+pwc.long <- group_by(pdat.long, STARI.GROUP, SERIE) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+stat.test <- pwc.long %>% add_xy_position(x = "time", fun = "mean_se")
+sidx = which(stat.test$p.adj.signif != "ns")
+stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+
+gg <- ggline(
+  pdat.long, x = "time", y = "score",
+  color = "SERIE", linetype = "SERIE", shape = "SERIE", size = 1.5,
+  facet.by = "STARI.GROUP", add = c("mean_se"),
+  position = position_dodge(width = 0.3), palette = color[["SERIE"]])
+
+pdat.long$xj = jitter(as.numeric(pdat.long[["time"]]), amount=.1)
+pdat.long$yj = jitter(pdat.long[["score"]], amount = .01)
+
+gg + geom_point(
+  data = pdat.long, aes_string(x="xj",y="yj",colour="SERIE"), size=0.5) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    position = position_dodge(width = 0.3), color = "SERIE",
+    label = "{ p.adj } ({ p.adj.signif })") + xlab("") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+## Scheirer and Wilcoxon PairWise comparisons for: *score ~ STARI.GROUP:SERIE*
+
+
+```{r}
+sch <- lapply(lvars, FUN = function(x) {
+  scheirer.test(pdat, x, c("STARI.GROUP","SERIE"), as.table = T) 
+})
+df <- do.call(rbind.fill, sch)
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+```{r}
+pwc <- lapply(lvars, FUN = function(x) {
+  list(
+    STARI.GROUP = tryCatch(pairwise_wilcox_test(group_by(pdat, SERIE),
+                                 as.formula(paste0(x," ~ STARI.GROUP")), detailed = T)
+                         , error = function(e) NULL),
+    SERIE = tryCatch(pairwise_wilcox_test(group_by(pdat, STARI.GROUP),
+                                 as.formula(paste0(x," ~ SERIE")), detailed = T)
+                         , error = function(e) NULL)
+  )
+})
+
+df <- do.call(rbind.fill, lapply(pwc, FUN =  function(x) {
+  do.call(rbind.fill, x)
+}))
+
+ivs = c()
+if ("STARI.GROUP" %in% colnames(df)) ivs = c(ivs, "STARI.GROUP")
+if ("SERIE" %in% colnames(df)) ivs = c(ivs, "SERIE")
+df <- df[,c(".y.",ivs,"group1","group2","n1","n2","estimate",
+            "statistic","p.adj","p.adj.signif")]
+```
+
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+```{r}
+plots <- lapply(lvars, FUN = function(y) {
+  livs = list("STARI.GROUP", "SERIE")
+  names(livs) = unlist(livs)
+  lapply(livs, FUN = function(x) {
+    iv2 = setdiff(names(livs), x)
+    if (!is.null(pwc[[y]][[iv2]])) {
+      stat.test <- pwc[[y]][[iv2]] %>% add_xy_position(x = x, fun = "max")
+      sidx = which(stat.test$p.adj.signif != "ns")
+      stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+      
+      ggboxplot(pdat, x = x, y = y, fill = iv2, palette = color[[iv2]]) +
+        stat_pvalue_manual(stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+                           label="{ p.adj } ({ p.adj.signif })") + xlab("")
+    }
+  })
+})
+```
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["STARI.GROUP"]]) &&
+    !is.null(plots[["score.pos"]][["STARI.GROUP"]])) {
+  egg::ggarrange(plots[["score.pre"]][["STARI.GROUP"]],
+                 plots[["score.pos"]][["STARI.GROUP"]], nrow = 1)  
+}
+```
+
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["SERIE"]]) &&
+    !is.null(plots[["score.pos"]][["SERIE"]])) {
+  egg::ggarrange(plots[["score.pre"]][["SERIE"]],
+                 plots[["score.pos"]][["SERIE"]], nrow = 1)
+}
+```
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "STARI.GROUP:SERIE") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["STARI.GROUP"]]))
+  plots[["score.dif"]][["STARI.GROUP"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["SERIE"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "STARI.GROUP:SERIE") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["SERIE"]]))
+  plots[["score.dif"]][["SERIE"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["STARI.GROUP"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+
+
+
+
+# Two-way factor analysis for: *score ~ GROUP:ESCOLA*
+
+
+```{r}
+pdat = remove_group_data(
+  dat[!is.na(dat[["STARI.GROUP"]]) & !is.na(dat[["ESCOLA"]]),],
+  "score.dif", c("STARI.GROUP","ESCOLA"))
+
+pdat.long <- rbind(pdat[,c("id","STARI.GROUP","ESCOLA")],
+                   pdat[,c("id","STARI.GROUP","ESCOLA")])
+pdat.long[["time"]] <- c(rep("pre", nrow(pdat)), rep("pos", nrow(pdat)))
+pdat.long[["time"]] <- factor(pdat.long[["time"]], c("pre","pos"))
+pdat.long[["score"]] <- c(pdat[["score.pre"]], pdat[["score.pos"]])
+
+y.position.min <- abs(
+  max(pdat.long[["score"]])
+  - min(pdat.long[["score"]]))/15
+
+lvars = as.list(c("score.dif","score.pos","score.pre"))
+names(lvars) = unlist(lvars)
+```
+
+## Pre-test and Post-test PairWise comparisons for: *score ~ STARI.GROUP:ESCOLA*
+
+```{r}
+pwc.long <- group_by(pdat.long, STARI.GROUP:ESCOLA) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+df <- pwc.long[,c(".y.","STARI.GROUP:ESCOLA","group1","group2","n1","n2","estimate",
+                  "statistic","p.adj","p.adj.signif")]
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+stat.test <- pwc.long %>% add_xy_position(x = "STARI.GROUP:ESCOLA", fun = "max")
+sidx = which(stat.test$p.adj.signif != "ns")
+stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+
+pdat.long[[paste0(c("STARI.GROUP","ESCOLA"), collapse = ":")]] = apply(
+  pdat.long[, c("STARI.GROUP","ESCOLA")], 1, paste0, collapse = ":")
+
+ggboxplot(pdat.long, x = "STARI.GROUP:ESCOLA", y = "score",
+          palette = color$prepost, fill = "time") +
+  stat_pvalue_manual(stat.test, tip.length = 0, hide.ns = T,
+                     label = "{ p.adj } ({ p.adj.signif })") + xlab("")
+```
+
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+pwc.long <- group_by(pdat.long, STARI.GROUP, ESCOLA) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+stat.test <- pwc.long %>% add_xy_position(x = "time", fun = "mean_se")
+sidx = which(stat.test$p.adj.signif != "ns")
+stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+
+gg <- ggline(
+  pdat.long, x = "time", y = "score",
+  color = "ESCOLA", linetype = "ESCOLA", shape = "ESCOLA", size = 1.5,
+  facet.by = "STARI.GROUP", add = c("mean_se"),
+  position = position_dodge(width = 0.3), palette = color[["ESCOLA"]])
+
+pdat.long$xj = jitter(as.numeric(pdat.long[["time"]]), amount=.1)
+pdat.long$yj = jitter(pdat.long[["score"]], amount = .01)
+
+gg + geom_point(
+  data = pdat.long, aes_string(x="xj",y="yj",colour="ESCOLA"), size=0.5) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    position = position_dodge(width = 0.3), color = "ESCOLA",
+    label = "{ p.adj } ({ p.adj.signif })") + xlab("") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+## Scheirer and Wilcoxon PairWise comparisons for: *score ~ STARI.GROUP:ESCOLA*
+
+
+```{r}
+sch <- lapply(lvars, FUN = function(x) {
+  scheirer.test(pdat, x, c("STARI.GROUP","ESCOLA"), as.table = T) 
+})
+df <- do.call(rbind.fill, sch)
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+```{r}
+pwc <- lapply(lvars, FUN = function(x) {
+  list(
+    STARI.GROUP = tryCatch(pairwise_wilcox_test(group_by(pdat, ESCOLA),
+                                 as.formula(paste0(x," ~ STARI.GROUP")), detailed = T)
+                         , error = function(e) NULL),
+    ESCOLA = tryCatch(pairwise_wilcox_test(group_by(pdat, STARI.GROUP),
+                                 as.formula(paste0(x," ~ ESCOLA")), detailed = T)
+                         , error = function(e) NULL)
+  )
+})
+
+df <- do.call(rbind.fill, lapply(pwc, FUN =  function(x) {
+  do.call(rbind.fill, x)
+}))
+
+ivs = c()
+if ("STARI.GROUP" %in% colnames(df)) ivs = c(ivs, "STARI.GROUP")
+if ("ESCOLA" %in% colnames(df)) ivs = c(ivs, "ESCOLA")
+df <- df[,c(".y.",ivs,"group1","group2","n1","n2","estimate",
+            "statistic","p.adj","p.adj.signif")]
+```
+
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+```{r}
+plots <- lapply(lvars, FUN = function(y) {
+  livs = list("STARI.GROUP", "ESCOLA")
+  names(livs) = unlist(livs)
+  lapply(livs, FUN = function(x) {
+    iv2 = setdiff(names(livs), x)
+    if (!is.null(pwc[[y]][[iv2]])) {
+      stat.test <- pwc[[y]][[iv2]] %>% add_xy_position(x = x, fun = "max")
+      sidx = which(stat.test$p.adj.signif != "ns")
+      stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+      
+      ggboxplot(pdat, x = x, y = y, fill = iv2, palette = color[[iv2]]) +
+        stat_pvalue_manual(stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+                           label="{ p.adj } ({ p.adj.signif })") + xlab("")
+    }
+  })
+})
+```
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["STARI.GROUP"]]) &&
+    !is.null(plots[["score.pos"]][["STARI.GROUP"]])) {
+  egg::ggarrange(plots[["score.pre"]][["STARI.GROUP"]],
+                 plots[["score.pos"]][["STARI.GROUP"]], nrow = 1)  
+}
+```
+
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["ESCOLA"]]) &&
+    !is.null(plots[["score.pos"]][["ESCOLA"]])) {
+  egg::ggarrange(plots[["score.pre"]][["ESCOLA"]],
+                 plots[["score.pos"]][["ESCOLA"]], nrow = 1)
+}
+```
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "STARI.GROUP:ESCOLA") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["STARI.GROUP"]]))
+  plots[["score.dif"]][["STARI.GROUP"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["ESCOLA"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "STARI.GROUP:ESCOLA") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["ESCOLA"]]))
+  plots[["score.dif"]][["ESCOLA"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["STARI.GROUP"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+
+
+

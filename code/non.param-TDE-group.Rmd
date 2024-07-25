@@ -1,0 +1,2295 @@
+---
+title: "Non-Parametric ANCOVA tests for for assess TDE score"
+author: Geiser C. Challco <geiser@alumni.usp.br>
+comment: Testes Não Parametricos ANCOVA para determinar se houve diferenças significativas
+         na aprendizagem (medido usando pre- e pos-testes).
+         
+         Non-parametric ANCOVA tests to determine whether there were significant differences
+         in the learning (measured using pre- and post-tests).
+         
+         Author - Geiser C. Challco <geiser@alumni.usp.br>
+         
+         Shiny-Statistic is distributed in the hope that it will be useful,
+         but WITHOUT ANY WARRANTY; without even the implied warranty of
+         MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+         GNU General Public License for more details.
+         
+         You should have received a copy of the GNU General Public License.
+         If not, see <https://www.gnu.org/licenses/>.
+output:
+  github_document:
+    toc: true
+  word_document:
+    toc: true
+  html_document:
+    toc: true
+fontsize: 10pt
+---
+
+
+```{r setup, include=FALSE}
+# Install and Load Packages
+if (!'remotes' %in% rownames(installed.packages())) install.packages('remotes')
+if (!"rshinystatistics" %in% rownames(installed.packages())) {
+  remotes::install_github("geiser/rshinystatistics")
+} else if (packageVersion("rshinystatistics") < "0.0.0.9900") {
+  remotes::install_github("geiser/rshinystatistics")
+}
+
+wants <- c('ggplot2','ggpubr','rshinystatistics','utils','randomcoloR')
+has <- wants %in% rownames(installed.packages())
+if (any(!has)) install.packages(wants[!has])
+
+library(readxl)
+
+library(shiny)
+library(esquisse)
+library(scales)
+library(knitr)
+library(rmarkdown)
+
+library(utils)
+library(ggpubr)
+library(ggplot2)
+library(randomcoloR)
+
+library(plyr)
+library(dplyr)
+
+library(rstatix)
+library(rshinystatistics)
+```
+
+```{r, include=FALSE, purl=FALSE}
+options(knitr.kable.NA = '')
+```
+
+# Setting Initial Variables
+
+```{r}
+dv = "score"
+dv.pos = "score.pos"
+dv.pre = "score.pre"
+dv.dif = "score.dif"
+
+fatores2 <- c("SEXO","ZONA","COR.RACA","LOCAL","SERIE","ESCOLA")
+lfatores2 <- as.list(fatores2)
+names(lfatores2) <- fatores2
+
+fatores1 <- c("GROUP", fatores2)
+lfatores1 <- as.list(fatores1)
+names(lfatores1) <- fatores1
+
+lfatores <- c(lfatores1)
+
+color <- list()
+color[["prepost"]] = c("#ffee65","#f28e2B")
+color[["GROUP"]] = c("#bcbd22","#fd7f6f")
+color[["SEXO"]] = c("#FF007F","#4D4DFF")
+color[["ZONA"]] = c("#AA00FF","#00BBBB")
+color[["COR.RACA"]] = c("#b97100","#75c298","#D6B91C","#9F262F","#848283")
+color[["LOCAL"]] = c("#AA00FF","#00BBBB")
+color[["SERIE"]] = c("#FF0000","#BF0040","#0000FF","#4000BF")
+color[["ESCOLA"]] = c("#d8668c","#ff7f7f","#ddf0b2","#b2b2ff","#b299e5")
+
+level <- list()
+level[["GROUP"]] = c("WG","St+WG")
+level[["SEXO"]] = c("F","M")
+level[["ZONA"]] = c("Urbana","Rural")
+level[["COR.RACA"]] = c("Parda", "Branca", "Amarela", "Indígena", "Preta")
+level[["LOCAL"]] = c("Urbana","Rural")
+level[["SERIE"]] = c("6a","7a","8a","9a")
+level[["ESCOLA"]] = c("PROF MARIA","PADRE ANCHIETA","PROF RICARDO","PADRE MOUSINHO","VER PORFIRIO")
+
+
+# ..
+
+gdat <- read_excel("../data/dat-TDE.xlsx", sheet = "main")
+gdat <- gdat[!is.na(gdat[["GROUP"]]),]
+gdat <- gdat[!is.na(gdat[[dv.pre]]) & !is.na(gdat[[dv.pos]]),]
+gdat[[dv.dif]] <- abs(gdat[[dv.pos]] - gdat[[dv.pre]])/80 
+
+gdat <- gdat[is.na(gdat$NECESSIDADE.DEFICIENCIA) & gdat$score.pre != 80 & gdat$score.pos != 80,]
+
+gdat[[dv.pre]] <- gdat[[dv.pre]]/80
+gdat[[dv.pos]] <- gdat[[dv.pos]]/80
+
+
+dat <- gdat
+dat$GROUP <- factor(dat[["GROUP"]], level[["GROUP"]])
+for (coln in c(names(lfatores))) {
+  if (length(level[[coln]]) > 0)
+    plevel = level[[coln]][level[[coln]] %in% unique(dat[[coln]])]
+  else
+    plevel = unique(dat[[coln]])[!is.na(unique(dat[[coln]]))]
+  
+  dat[[coln]] <- factor(dat[[coln]], plevel)
+}
+
+dat <- dat[,c("id", names(lfatores), dv.pre, dv.pos, dv.dif)]
+
+dat.long <- rbind(dat, dat)
+dat.long$time <- c(rep("pre", nrow(dat)), rep("pos", nrow(dat)))
+dat.long$time <- factor(dat.long$time, c("pre","pos"))
+dat.long[[dv]] <- c(dat[[dv.pre]], dat[[dv.pos]])
+
+
+for (f in c("GROUP", names(lfatores))) {
+  if (is.null(color[[f]]) && length(unique(dat[[f]])) > 0) 
+      color[[f]] <- distinctColorPalette(length(unique(dat[[f]])))
+}
+
+for (f in c(fatores2)) {
+  if (is.null(color[[paste0("GROUP:",f)]]) && length(unique(dat[[f]])) > 0)
+    color[[paste0("GROUP:",f)]] <- distinctColorPalette(
+      length(unique(dat[["GROUP"]]))*length(unique(dat[[f]])))
+}
+
+ldat <- list()
+laov <- list()
+lpwc <- list()
+lemms <- list()
+```
+
+# Descriptive Statistics of Initial Data
+
+```{r}
+df <- get.descriptives(dat, c(dv.pre, dv.pos, dv.dif), c("GROUP"),
+                       symmetry.test = T, normality.test = F)
+df <- plyr::rbind.fill(
+  df, do.call(plyr::rbind.fill, lapply(lfatores2, FUN = function(f) {
+    if (nrow(dat) > 0 && sum(!is.na(unique(dat[[f]]))) > 1)
+      get.descriptives(dat, c(dv.pre,dv.pos), c("GROUP", f), include.global = F,
+                       symmetry.test = T, normality.test = F)
+    }))
+)
+df <- df[,c("variable",fatores1[fatores1 %in% colnames(df)],
+            colnames(df)[!colnames(df) %in% c(fatores1,"variable")])]
+```
+
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+# One-way factor analysis for: *score ~ GROUP*
+
+```{r}
+pdat = remove_group_data(dat[!is.na(dat[["GROUP"]]),], "score.dif", "GROUP")
+
+pdat.long <- rbind(pdat[,c("id","GROUP")], pdat[,c("id","GROUP")])
+pdat.long[["time"]] <- c(rep("pre", nrow(pdat)), rep("pos", nrow(pdat)))
+pdat.long[["time"]] <- factor(pdat.long[["time"]], c("pre","pos"))
+pdat.long[["score"]] <- c(pdat[["score.pre"]], pdat[["score.pos"]])
+
+y.position.min <- abs(
+  max(pdat.long[["score"]])
+  - min(pdat.long[["score"]]))/15
+
+lvars = as.list(c("score.dif","score.pos","score.pre"))
+names(lvars) = unlist(lvars)
+```
+
+## Pre-test and Post-test PairWise comparisons for: *score ~ GROUP*
+
+```{r}
+pwc.long <- group_by(pdat.long, GROUP) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+df <- pwc.long[,c(".y.","GROUP","group1","group2","n1","n2","estimate",
+                  "statistic","p.adj","p.adj.signif")]
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+### Plot using p.adj as information
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+stat.test <- pwc.long %>% add_xy_position(x = "time", fun = "mean_ci")
+stat.test$y.position <- stat.test$y.position + y.position.min
+
+gg <- ggline(
+  pdat.long, x = "time", y = "score", size = 1.5,
+  facet.by = "GROUP", add = c("mean_ci"), color = "GROUP",
+  position = position_dodge(width = 0.3), palette = color[["GROUP"]])
+
+pdat.long$xj = jitter(as.numeric(pdat.long[["time"]]), amount=.1)
+pdat.long$yj = jitter(pdat.long[["score"]], amount = .01)
+
+gg + geom_point(
+  data = pdat.long, aes_string(x="xj",y="yj", color = "GROUP"), size=0.5) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    position = position_dodge(width = 0.3),
+    label = "{ p.adj } ({ p.adj.signif })") + xlab("") +
+  coord_cartesian(ylim = c(min(pdat.long$yj), max(pdat.long$yj))) +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+### New Plot using diferences as information
+
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+stat.test <- pwc.long %>% add_xy_position(x = "time", fun = "mean_ci")
+
+stat.test$r <- sapply(abs(stat.test$estimate)/1, FUN = function(x) {
+   ifelse(x < 0.0001, "<1%", paste0(round(x*100,2), "%"))
+})
+
+gg <- ggline(
+  pdat.long, x = "time", y = "score", size = 2,
+  facet.by = "GROUP", add = c("mean_ci"), color = "GROUP",
+  palette = color[["GROUP"]]) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    position = position_dodge(width = 0.3),
+    label = "{ r } ({ p.adj.signif })") +
+  ggplot2::ylab("")
+
+gg + theme(strip.text = element_text(size = 14),
+           axis.text = element_text(size = 14))
+```
+
+
+## Kruskal and Wilcoxon PairWise comparisons for: *score ~ GROUP*
+
+
+```{r}
+kt <- lapply(lvars, FUN = function(x) {
+  kruskal_test(pdat, as.formula(paste0(x," ~ GROUP")))  
+})
+
+df <- do.call(rbind.fill, lapply(lvars, function(x) {
+  add_significance(merge(
+    kt[[x]], kruskal_effsize(pdat, as.formula(paste0(x," ~ GROUP"))),
+    by = c(".y.","n"), suffixes = c("",".ez")))
+}))
+
+df <- df[,c(".y.","n","df","statistic","p","p.signif","effsize","magnitude")]
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+```{r}
+pwc <- lapply(lvars, FUN = function(x) {
+  pairwise_wilcox_test(pdat, as.formula(paste0(x," ~ GROUP")), detailed = T)  
+})
+
+df <- do.call(rbind.fill, pwc)
+```
+
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+## Plots to compare pre- and post results
+
+```{r}
+plots <- lapply(lvars, FUN = function(y) {
+  stat.test <- pwc[[y]] %>% add_xy_position(x = "GROUP")
+  stat.test$y.position <- stat.test$y.position + y.position.min
+  ggboxplot(pdat, x = "GROUP", y = y, fill = "GROUP",
+            palette = color[["GROUP"]]) +
+    stat_pvalue_manual(stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+                       label="{ p.adj } ({ p.adj.signif })") + xlab("")
+})
+```
+
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+egg::ggarrange(plots[["score.pre"]], plots[["score.pos"]], nrow = 1)
+```
+
+## Plot to compare diferences of pre-post
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+plots[["score.dif"]] +
+  labs(subtitle = get_test_label(kt[["score.dif"]], detailed = T),
+       caption = get_pwc_label(pwc[["score.dif"]])) +
+  ylab("score (dif)")  +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+## Plots for  learning gain with percentages
+
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+stat.test <- pwc$score.dif %>% add_xy_position(x = "GROUP", fun = "mean_ci")
+
+stat.test$r <- sapply(abs(stat.test$estimate), FUN = function(x) {
+   ifelse(x < 0.0001, "<1%", paste0(round(x*100,2), "%"))
+})
+
+gg <- ggline(
+  pdat, x = "GROUP", y = "score.dif", size = 2, add = c("mean_ci"),
+  color = "GROUP", palette = color[["GROUP"]]) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    label = "{ r } ({ p.adj.signif })") +
+  ggplot2::ylab("")
+
+gg + theme(strip.text = element_text(size = 14),
+           axis.text = element_text(size = 14))
+```
+
+
+
+# Two-way factor analysis for: *score ~ GROUP:SEXO*
+
+
+```{r}
+pdat = remove_group_data(
+  dat[!is.na(dat[["GROUP"]]) & !is.na(dat[["SEXO"]]),],
+  "score.dif", c("GROUP","SEXO"))
+
+pdat.long <- rbind(pdat[,c("id","GROUP","SEXO")],
+                   pdat[,c("id","GROUP","SEXO")])
+pdat.long[["time"]] <- c(rep("pre", nrow(pdat)), rep("pos", nrow(pdat)))
+pdat.long[["time"]] <- factor(pdat.long[["time"]], c("pre","pos"))
+pdat.long[["score"]] <- c(pdat[["score.pre"]], pdat[["score.pos"]])
+
+y.position.min <- abs(
+  max(pdat.long[["score"]])
+  - min(pdat.long[["score"]]))/15
+
+lvars = as.list(c("score.dif","score.pos","score.pre"))
+names(lvars) = unlist(lvars)
+```
+
+## Pre-test and Post-test PairWise comparisons for: *score ~ GROUP:SEXO*
+
+```{r}
+pwc.long <- group_by(pdat.long, GROUP:SEXO) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+df <- pwc.long[,c(".y.","GROUP:SEXO","group1","group2","n1","n2","estimate",
+                  "statistic","p.adj","p.adj.signif")]
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+### Plot to compare pre- and post-test
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+pwc.long <- group_by(pdat.long, GROUP, SEXO) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+stat.test <- pwc.long %>% add_xy_position(x = "time", fun = "mean_ci")
+sidx = which(stat.test$p.adj.signif != "ns")
+stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+
+gg <- ggline(
+  pdat.long, x = "time", y = "score",
+  color = "SEXO", linetype = "SEXO", shape = "SEXO", size = 1.5,
+  facet.by = "GROUP", add = c("mean_ci"),
+  position = position_dodge(width = 0.3), palette = color[["SEXO"]])
+
+pdat.long$xj = jitter(as.numeric(pdat.long[["time"]]), amount=.1)
+pdat.long$yj = jitter(pdat.long[["score"]], amount = .01)
+
+gg + geom_point(
+  data = pdat.long, aes_string(x="xj",y="yj",colour="SEXO"), size=0.5) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    position = position_dodge(width = 0.3), color = "SEXO",
+    label = "{ p.adj } ({ p.adj.signif })") + xlab("") + ylab("") +
+  ylim(min(pdat.long$yj), max(pdat.long$yj)) +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+### New plot including percentagens in the differences
+
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+stat.test <- pwc.long %>% add_xy_position(x = "time", fun = "mean_ci")
+
+stat.test$r <- sapply(abs(stat.test$estimate)/1, FUN = function(x) {
+   ifelse(x < 0.0001, "<1%", paste0(round(x*100,2), "%"))
+})
+
+gg <- ggline(
+  pdat.long, x = "time", y = "score",
+  color = "SEXO", linetype = "SEXO", shape = "SEXO", size = 2,
+  facet.by = "GROUP", add = c("mean_ci"),
+  position = position_dodge(width = 0.3), palette = color[["SEXO"]]) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    color = "SEXO",
+    label = "{ r } ({ p.adj.signif })") + xlab("") + ylab("")
+
+gg + theme(strip.text = element_text(size = 14),
+           axis.text = element_text(size = 14))
+```
+
+
+## Scheirer and Wilcoxon PairWise comparisons for: *score ~ GROUP:SEXO*
+
+
+```{r}
+sch <- lapply(lvars, FUN = function(x) {
+  scheirer.test(pdat, x, c("GROUP","SEXO"), as.table = T) 
+})
+df <- do.call(rbind.fill, sch)
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+```{r}
+pwc <- lapply(lvars, FUN = function(x) {
+  list(
+    GROUP = tryCatch(pairwise_wilcox_test(group_by(pdat, SEXO),
+                                 as.formula(paste0(x," ~ GROUP")), detailed = T)
+                         , error = function(e) NULL),
+    SEXO = tryCatch(pairwise_wilcox_test(group_by(pdat, GROUP),
+                                 as.formula(paste0(x," ~ SEXO")), detailed = T)
+                         , error = function(e) NULL)
+  )
+})
+
+df <- do.call(rbind.fill, lapply(pwc, FUN =  function(x) {
+  do.call(rbind.fill, x)
+}))
+
+ivs = c()
+if ("GROUP" %in% colnames(df)) ivs = c(ivs, "GROUP")
+if ("SEXO" %in% colnames(df)) ivs = c(ivs, "SEXO")
+df <- df[,c(".y.",ivs,"group1","group2","n1","n2","estimate",
+            "statistic","p.adj","p.adj.signif")]
+```
+
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+### Plot to compare results from pre and post
+
+```{r}
+plots <- lapply(lvars, FUN = function(y) {
+  livs = list("GROUP", "SEXO")
+  names(livs) = unlist(livs)
+  lapply(livs, FUN = function(x) {
+    iv2 = setdiff(names(livs), x)
+    if (!is.null(pwc[[y]][[iv2]])) {
+      stat.test <- pwc[[y]][[iv2]] %>% add_xy_position(x = x, fun = "max")
+      sidx = which(stat.test$p.adj.signif != "ns")
+      stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+      
+      ggboxplot(pdat, x = x, y = y, fill = iv2, palette = color[[iv2]]) +
+        stat_pvalue_manual(stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+                           label="{ p.adj } ({ p.adj.signif })") + xlab("")
+    }
+  })
+})
+```
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["GROUP"]]) &&
+    !is.null(plots[["score.pos"]][["GROUP"]])) {
+  egg::ggarrange(plots[["score.pre"]][["GROUP"]],
+                 plots[["score.pos"]][["GROUP"]], nrow = 1)  
+}
+```
+
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["SEXO"]]) &&
+    !is.null(plots[["score.pos"]][["SEXO"]])) {
+  egg::ggarrange(plots[["score.pre"]][["SEXO"]],
+                 plots[["score.pos"]][["SEXO"]], nrow = 1)
+}
+```
+
+### Plot to compare differences (1st)
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "GROUP:SEXO") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["GROUP"]]))
+  plots[["score.dif"]][["GROUP"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["SEXO"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+### Plot to compare differences (1st)
+
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "GROUP:SEXO") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["SEXO"]]))
+  plots[["score.dif"]][["SEXO"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["GROUP"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+### Plot to compare differences using in one comparison
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "GROUP:SEXO") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+dodge = 0.08
+x.seg = sum(!is.na(unique(pdat[["SEXO"]])))-1
+d.seg = -1*dodge*x.seg/2
+
+
+pwc1 = pwc[["score.dif"]][["GROUP"]]
+pwc2 = pwc1[pwc[["score.dif"]][["GROUP"]]$p.adj.signif != "ns",]
+
+if (!is.null(pwc1) && nrow(pwc2) > 0) {
+  pwc2 = rstatix::add_xy_position(pwc2, dodge = dodge, fun = "mean_ci")
+  
+  for (f in sort(unique(pdat[["SEXO"]]))) {
+    fbool <- pwc2[["SEXO"]] == f
+    if (sum(fbool) > 0) {
+      pwc2$xmin[which(fbool)] <- pwc2$xmin[which(fbool)]+d.seg
+      pwc2$xmax[which(fbool)] <- pwc2$xmax[which(fbool)]+d.seg
+    }
+    d.seg <- d.seg + dodge
+  }
+} 
+
+pwc1g <- pwc[["score.dif"]][["SEXO"]]
+pwc2g <- pwc1g[pwc[["score.dif"]][["SEXO"]]$p.adj.signif != "ns",]
+
+if (!is.null(pwc1g) && nrow(pwc2g) > 0) {
+  pwc2g$y.position <- sapply(seq(1,nrow(pwc2g)), FUN = function(i) {
+    rw <- as.list(pwc2g[i,])
+    resp = -Inf
+    for (atr2 in unique(pdat[["SEXO"]])) {
+      idx = which(pdat[["GROUP"]] == rw[["GROUP"]] & pdat[["SEXO"]] == atr2)
+      rmax = max(mean_ci(pdat[["score.dif"]][c(idx)]))
+      if (rmax > resp) resp <- rmax
+    }
+    return(resp)
+  })
+  pwc2g$xpos <- sapply(seq(1,nrow(pwc2g)), FUN = function(i) {
+    rw <- as.list(pwc2g[i,])
+    tmp <- add_x_position(pwc[["score.dif"]][["GROUP"]])
+    min(tmp$xmin[which(tmp$group1 == rw[["GROUP"]])],
+        tmp$xmax[which(tmp$group2 == rw[["GROUP"]])])
+  })
+  pwc2g$xmin <- pwc2g$xpos - abs(dodge*x.seg/2) 
+  pwc2g$xmax <- pwc2g$xpos + abs(dodge*x.seg/2)
+}
+
+if (!is.null(pwc1) && nrow(pwc2) > 0) {
+  pwc2$r <- sapply(abs(pwc2$estimate)/1, FUN = function(x) {
+     ifelse(x < 0.0001, "<1%", paste0(round(x*100,2), "%"))
+  })
+}
+
+pd <- ggplot2::position_dodge(width = sum(!is.na(unique(pwc2[["SEXO"]])))*dodge)
+
+lp <- ggpubr::ggline(pdat, x="GROUP", y = "score.dif", color = "SEXO", linetype = "SEXO",
+                       palette = color[["SEXO"]], plot_type='b', size=2,
+                       position = pd, add = "mean_ci", ylab = "")
+
+if (!is.null(pwc1) && nrow(pwc2) > 0)
+  lp <- lp + ggpubr::stat_pvalue_manual(pwc2, color = "SEXO", linetype = "SEXO",
+                                          hide.ns = T, tip.length = 0,
+                                          label = "{ r } ({ p.adj.signif })")
+
+if (!is.null(pwc1g) && nrow(pwc2g) > 0) {
+  y.pos.min = max(pwc2g$y.position)/10
+  if (nrow(pwc2) > 0)
+    y.pos.min = max(pwc2$y.position, pwc2g$y.position)/10
+  
+  pwc2g$r <- sapply(abs(pwc2g$estimate)/1, FUN = function(x) {
+     ifelse(x < 0.0001, "<1%", paste0(round(x*100,2), "%"))
+  })
+  pwc2g$y.position <- pwc2g$y.position + y.pos.min
+  
+  for (i in which(pwc2g$p.adj < 0.05)) {
+    x1 = pwc2g$xmin[i]
+    x2 = pwc2g$xmax[i]
+    y.pos = pwc2g$y.position[i]
+    label = pwc2g$p.adj.signif[i]
+    label = paste0(pwc2g$r[i]," (",label,")")
+    
+    lp <- lp + ggplot2::geom_segment(x = x1, y = y.pos, xend = x2, yend = y.pos) +
+      ggplot2::geom_text(x=(x1+x2)/2, y = y.pos+y.pos.min/3, label=label)
+  }
+}
+
+lp + labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+                            dof.res, ")=", statistic, pval),
+          caption = get_pwc_label(pwc[["score.dif"]][["SEXO"]])) +
+  xlab("") + ylab("") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+
+# Two-way factor analysis for: *score ~ GROUP:ZONA*
+
+
+```{r}
+pdat = remove_group_data(
+  dat[!is.na(dat[["GROUP"]]) & !is.na(dat[["ZONA"]]),],
+  "score.dif", c("GROUP","ZONA"))
+
+pdat.long <- rbind(pdat[,c("id","GROUP","ZONA")],
+                   pdat[,c("id","GROUP","ZONA")])
+pdat.long[["time"]] <- c(rep("pre", nrow(pdat)), rep("pos", nrow(pdat)))
+pdat.long[["time"]] <- factor(pdat.long[["time"]], c("pre","pos"))
+pdat.long[["score"]] <- c(pdat[["score.pre"]], pdat[["score.pos"]])
+
+y.position.min <- abs(
+  max(pdat.long[["score"]])
+  - min(pdat.long[["score"]]))/15
+
+lvars = as.list(c("score.dif","score.pos","score.pre"))
+names(lvars) = unlist(lvars)
+```
+
+## Pre-test and Post-test PairWise comparisons for: *score ~ GROUP:ZONA*
+
+```{r}
+pwc.long <- group_by(pdat.long, GROUP:ZONA) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+df <- pwc.long[,c(".y.","GROUP:ZONA","group1","group2","n1","n2","estimate",
+                  "statistic","p.adj","p.adj.signif")]
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+### Plot to compare pre- and post-test
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+pwc.long <- group_by(pdat.long, GROUP, ZONA) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+stat.test <- pwc.long %>% add_xy_position(x = "time", fun = "mean_ci")
+sidx = which(stat.test$p.adj.signif != "ns")
+stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+
+gg <- ggline(
+  pdat.long, x = "time", y = "score",
+  color = "ZONA", linetype = "ZONA", shape = "ZONA", size = 1.5,
+  facet.by = "GROUP", add = c("mean_ci"),
+  position = position_dodge(width = 0.3), palette = color[["ZONA"]])
+
+pdat.long$xj = jitter(as.numeric(pdat.long[["time"]]), amount=.1)
+pdat.long$yj = jitter(pdat.long[["score"]], amount = .01)
+
+gg + geom_point(
+  data = pdat.long, aes_string(x="xj",y="yj",colour="ZONA"), size=0.5) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    position = position_dodge(width = 0.3), color = "ZONA",
+    label = "{ p.adj } ({ p.adj.signif })") + xlab("") + ylab("") +
+  ylim(min(pdat.long$yj), max(pdat.long$yj)) +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+### New plot including percentagens in the differences
+
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+stat.test <- pwc.long %>% add_xy_position(x = "time", fun = "mean_ci")
+
+stat.test$r <- sapply(abs(stat.test$estimate)/1, FUN = function(x) {
+   ifelse(x < 0.0001, "<1%", paste0(round(x*100,2), "%"))
+})
+
+gg <- ggline(
+  pdat.long, x = "time", y = "score",
+  color = "ZONA", linetype = "ZONA", shape = "ZONA", size = 2,
+  facet.by = "GROUP", add = c("mean_ci"),
+  position = position_dodge(width = 0.3), palette = color[["ZONA"]]) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    color = "ZONA",
+    label = "{ r } ({ p.adj.signif })") + xlab("") + ylab("")
+
+gg + theme(strip.text = element_text(size = 14),
+           axis.text = element_text(size = 14))
+```
+
+
+## Scheirer and Wilcoxon PairWise comparisons for: *score ~ GROUP:ZONA*
+
+
+```{r}
+sch <- lapply(lvars, FUN = function(x) {
+  scheirer.test(pdat, x, c("GROUP","ZONA"), as.table = T) 
+})
+df <- do.call(rbind.fill, sch)
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+```{r}
+pwc <- lapply(lvars, FUN = function(x) {
+  list(
+    GROUP = tryCatch(pairwise_wilcox_test(group_by(pdat, ZONA),
+                                 as.formula(paste0(x," ~ GROUP")), detailed = T)
+                         , error = function(e) NULL),
+    ZONA = tryCatch(pairwise_wilcox_test(group_by(pdat, GROUP),
+                                 as.formula(paste0(x," ~ ZONA")), detailed = T)
+                         , error = function(e) NULL)
+  )
+})
+
+df <- do.call(rbind.fill, lapply(pwc, FUN =  function(x) {
+  do.call(rbind.fill, x)
+}))
+
+ivs = c()
+if ("GROUP" %in% colnames(df)) ivs = c(ivs, "GROUP")
+if ("ZONA" %in% colnames(df)) ivs = c(ivs, "ZONA")
+df <- df[,c(".y.",ivs,"group1","group2","n1","n2","estimate",
+            "statistic","p.adj","p.adj.signif")]
+```
+
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+### Plot to compare results from pre and post
+
+```{r}
+plots <- lapply(lvars, FUN = function(y) {
+  livs = list("GROUP", "ZONA")
+  names(livs) = unlist(livs)
+  lapply(livs, FUN = function(x) {
+    iv2 = setdiff(names(livs), x)
+    if (!is.null(pwc[[y]][[iv2]])) {
+      stat.test <- pwc[[y]][[iv2]] %>% add_xy_position(x = x, fun = "max")
+      sidx = which(stat.test$p.adj.signif != "ns")
+      stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+      
+      ggboxplot(pdat, x = x, y = y, fill = iv2, palette = color[[iv2]]) +
+        stat_pvalue_manual(stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+                           label="{ p.adj } ({ p.adj.signif })") + xlab("")
+    }
+  })
+})
+```
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["GROUP"]]) &&
+    !is.null(plots[["score.pos"]][["GROUP"]])) {
+  egg::ggarrange(plots[["score.pre"]][["GROUP"]],
+                 plots[["score.pos"]][["GROUP"]], nrow = 1)  
+}
+```
+
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["ZONA"]]) &&
+    !is.null(plots[["score.pos"]][["ZONA"]])) {
+  egg::ggarrange(plots[["score.pre"]][["ZONA"]],
+                 plots[["score.pos"]][["ZONA"]], nrow = 1)
+}
+```
+
+### Plot to compare differences (1st)
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "GROUP:ZONA") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["GROUP"]]))
+  plots[["score.dif"]][["GROUP"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["ZONA"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+### Plot to compare differences (1st)
+
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "GROUP:ZONA") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["ZONA"]]))
+  plots[["score.dif"]][["ZONA"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["GROUP"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+### Plot to compare differences using in one comparison
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "GROUP:ZONA") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+dodge = 0.08
+x.seg = sum(!is.na(unique(pdat[["ZONA"]])))-1
+d.seg = -1*dodge*x.seg/2
+
+
+pwc1 = pwc[["score.dif"]][["GROUP"]]
+pwc2 = pwc1[pwc[["score.dif"]][["GROUP"]]$p.adj.signif != "ns",]
+
+if (!is.null(pwc1) && nrow(pwc2) > 0) {
+  pwc2 = rstatix::add_xy_position(pwc2, dodge = dodge, fun = "mean_ci")
+  
+  for (f in sort(unique(pdat[["ZONA"]]))) {
+    fbool <- pwc2[["ZONA"]] == f
+    if (sum(fbool) > 0) {
+      pwc2$xmin[which(fbool)] <- pwc2$xmin[which(fbool)]+d.seg
+      pwc2$xmax[which(fbool)] <- pwc2$xmax[which(fbool)]+d.seg
+    }
+    d.seg <- d.seg + dodge
+  }
+} 
+
+pwc1g <- pwc[["score.dif"]][["ZONA"]]
+pwc2g <- pwc1g[pwc[["score.dif"]][["ZONA"]]$p.adj.signif != "ns",]
+
+if (!is.null(pwc1g) && nrow(pwc2g) > 0) {
+  pwc2g$y.position <- sapply(seq(1,nrow(pwc2g)), FUN = function(i) {
+    rw <- as.list(pwc2g[i,])
+    resp = -Inf
+    for (atr2 in unique(pdat[["ZONA"]])) {
+      idx = which(pdat[["GROUP"]] == rw[["GROUP"]] & pdat[["ZONA"]] == atr2)
+      rmax = max(mean_ci(pdat[["score.dif"]][c(idx)]))
+      if (rmax > resp) resp <- rmax
+    }
+    return(resp)
+  })
+  pwc2g$xpos <- sapply(seq(1,nrow(pwc2g)), FUN = function(i) {
+    rw <- as.list(pwc2g[i,])
+    tmp <- add_x_position(pwc[["score.dif"]][["GROUP"]])
+    min(tmp$xmin[which(tmp$group1 == rw[["GROUP"]])],
+        tmp$xmax[which(tmp$group2 == rw[["GROUP"]])])
+  })
+  pwc2g$xmin <- pwc2g$xpos - abs(dodge*x.seg/2) 
+  pwc2g$xmax <- pwc2g$xpos + abs(dodge*x.seg/2)
+}
+
+if (!is.null(pwc1) && nrow(pwc2) > 0) {
+  pwc2$r <- sapply(abs(pwc2$estimate)/1, FUN = function(x) {
+     ifelse(x < 0.0001, "<1%", paste0(round(x*100,2), "%"))
+  })
+}
+
+pd <- ggplot2::position_dodge(width = sum(!is.na(unique(pwc2[["ZONA"]])))*dodge)
+
+lp <- ggpubr::ggline(pdat, x="GROUP", y = "score.dif", color = "ZONA", linetype = "ZONA",
+                       palette = color[["ZONA"]], plot_type='b', size=2,
+                       position = pd, add = "mean_ci", ylab = "")
+
+if (!is.null(pwc1) && nrow(pwc2) > 0)
+  lp <- lp + ggpubr::stat_pvalue_manual(pwc2, color = "ZONA", linetype = "ZONA",
+                                          hide.ns = T, tip.length = 0,
+                                          label = "{ r } ({ p.adj.signif })")
+
+if (!is.null(pwc1g) && nrow(pwc2g) > 0) {
+  y.pos.min = max(pwc2g$y.position)/10
+  if (nrow(pwc2) > 0)
+    y.pos.min = max(pwc2$y.position, pwc2g$y.position)/10
+  
+  pwc2g$r <- sapply(abs(pwc2g$estimate)/1, FUN = function(x) {
+     ifelse(x < 0.0001, "<1%", paste0(round(x*100,2), "%"))
+  })
+  pwc2g$y.position <- pwc2g$y.position + y.pos.min
+  
+  for (i in which(pwc2g$p.adj < 0.05)) {
+    x1 = pwc2g$xmin[i]
+    x2 = pwc2g$xmax[i]
+    y.pos = pwc2g$y.position[i]
+    label = pwc2g$p.adj.signif[i]
+    label = paste0(pwc2g$r[i]," (",label,")")
+    
+    lp <- lp + ggplot2::geom_segment(x = x1, y = y.pos, xend = x2, yend = y.pos) +
+      ggplot2::geom_text(x=(x1+x2)/2, y = y.pos+y.pos.min/3, label=label)
+  }
+}
+
+lp + labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+                            dof.res, ")=", statistic, pval),
+          caption = get_pwc_label(pwc[["score.dif"]][["ZONA"]])) +
+  xlab("") + ylab("") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+
+# Two-way factor analysis for: *score ~ GROUP:COR.RACA*
+
+
+```{r}
+pdat = remove_group_data(
+  dat[!is.na(dat[["GROUP"]]) & !is.na(dat[["COR.RACA"]]),],
+  "score.dif", c("GROUP","COR.RACA"))
+
+pdat.long <- rbind(pdat[,c("id","GROUP","COR.RACA")],
+                   pdat[,c("id","GROUP","COR.RACA")])
+pdat.long[["time"]] <- c(rep("pre", nrow(pdat)), rep("pos", nrow(pdat)))
+pdat.long[["time"]] <- factor(pdat.long[["time"]], c("pre","pos"))
+pdat.long[["score"]] <- c(pdat[["score.pre"]], pdat[["score.pos"]])
+
+y.position.min <- abs(
+  max(pdat.long[["score"]])
+  - min(pdat.long[["score"]]))/15
+
+lvars = as.list(c("score.dif","score.pos","score.pre"))
+names(lvars) = unlist(lvars)
+```
+
+## Pre-test and Post-test PairWise comparisons for: *score ~ GROUP:COR.RACA*
+
+```{r}
+pwc.long <- group_by(pdat.long, GROUP:COR.RACA) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+df <- pwc.long[,c(".y.","GROUP:COR.RACA","group1","group2","n1","n2","estimate",
+                  "statistic","p.adj","p.adj.signif")]
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+### Plot to compare pre- and post-test
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+pwc.long <- group_by(pdat.long, GROUP, COR.RACA) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+stat.test <- pwc.long %>% add_xy_position(x = "time", fun = "mean_ci")
+sidx = which(stat.test$p.adj.signif != "ns")
+stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+
+gg <- ggline(
+  pdat.long, x = "time", y = "score",
+  color = "COR.RACA", linetype = "COR.RACA", shape = "COR.RACA", size = 1.5,
+  facet.by = "GROUP", add = c("mean_ci"),
+  position = position_dodge(width = 0.3), palette = color[["COR.RACA"]])
+
+pdat.long$xj = jitter(as.numeric(pdat.long[["time"]]), amount=.1)
+pdat.long$yj = jitter(pdat.long[["score"]], amount = .01)
+
+gg + geom_point(
+  data = pdat.long, aes_string(x="xj",y="yj",colour="COR.RACA"), size=0.5) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    position = position_dodge(width = 0.3), color = "COR.RACA",
+    label = "{ p.adj } ({ p.adj.signif })") + xlab("") + ylab("") +
+  ylim(min(pdat.long$yj), max(pdat.long$yj)) +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+### New plot including percentagens in the differences
+
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+stat.test <- pwc.long %>% add_xy_position(x = "time", fun = "mean_ci")
+
+stat.test$r <- sapply(abs(stat.test$estimate)/1, FUN = function(x) {
+   ifelse(x < 0.0001, "<1%", paste0(round(x*100,2), "%"))
+})
+
+gg <- ggline(
+  pdat.long, x = "time", y = "score",
+  color = "COR.RACA", linetype = "COR.RACA", shape = "COR.RACA", size = 2,
+  facet.by = "GROUP", add = c("mean_ci"),
+  position = position_dodge(width = 0.3), palette = color[["COR.RACA"]]) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    color = "COR.RACA",
+    label = "{ r } ({ p.adj.signif })") + xlab("") + ylab("")
+
+gg + theme(strip.text = element_text(size = 14),
+           axis.text = element_text(size = 14))
+```
+
+
+## Scheirer and Wilcoxon PairWise comparisons for: *score ~ GROUP:COR.RACA*
+
+
+```{r}
+sch <- lapply(lvars, FUN = function(x) {
+  scheirer.test(pdat, x, c("GROUP","COR.RACA"), as.table = T) 
+})
+df <- do.call(rbind.fill, sch)
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+```{r}
+pwc <- lapply(lvars, FUN = function(x) {
+  list(
+    GROUP = tryCatch(pairwise_wilcox_test(group_by(pdat, COR.RACA),
+                                 as.formula(paste0(x," ~ GROUP")), detailed = T)
+                         , error = function(e) NULL),
+    COR.RACA = tryCatch(pairwise_wilcox_test(group_by(pdat, GROUP),
+                                 as.formula(paste0(x," ~ COR.RACA")), detailed = T)
+                         , error = function(e) NULL)
+  )
+})
+
+df <- do.call(rbind.fill, lapply(pwc, FUN =  function(x) {
+  do.call(rbind.fill, x)
+}))
+
+ivs = c()
+if ("GROUP" %in% colnames(df)) ivs = c(ivs, "GROUP")
+if ("COR.RACA" %in% colnames(df)) ivs = c(ivs, "COR.RACA")
+df <- df[,c(".y.",ivs,"group1","group2","n1","n2","estimate",
+            "statistic","p.adj","p.adj.signif")]
+```
+
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+### Plot to compare results from pre and post
+
+```{r}
+plots <- lapply(lvars, FUN = function(y) {
+  livs = list("GROUP", "COR.RACA")
+  names(livs) = unlist(livs)
+  lapply(livs, FUN = function(x) {
+    iv2 = setdiff(names(livs), x)
+    if (!is.null(pwc[[y]][[iv2]])) {
+      stat.test <- pwc[[y]][[iv2]] %>% add_xy_position(x = x, fun = "max")
+      sidx = which(stat.test$p.adj.signif != "ns")
+      stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+      
+      ggboxplot(pdat, x = x, y = y, fill = iv2, palette = color[[iv2]]) +
+        stat_pvalue_manual(stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+                           label="{ p.adj } ({ p.adj.signif })") + xlab("")
+    }
+  })
+})
+```
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["GROUP"]]) &&
+    !is.null(plots[["score.pos"]][["GROUP"]])) {
+  egg::ggarrange(plots[["score.pre"]][["GROUP"]],
+                 plots[["score.pos"]][["GROUP"]], nrow = 1)  
+}
+```
+
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["COR.RACA"]]) &&
+    !is.null(plots[["score.pos"]][["COR.RACA"]])) {
+  egg::ggarrange(plots[["score.pre"]][["COR.RACA"]],
+                 plots[["score.pos"]][["COR.RACA"]], nrow = 1)
+}
+```
+
+### Plot to compare differences (1st)
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "GROUP:COR.RACA") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["GROUP"]]))
+  plots[["score.dif"]][["GROUP"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["COR.RACA"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+### Plot to compare differences (1st)
+
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "GROUP:COR.RACA") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["COR.RACA"]]))
+  plots[["score.dif"]][["COR.RACA"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["GROUP"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+### Plot to compare differences using in one comparison
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "GROUP:COR.RACA") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+dodge = 0.08
+x.seg = sum(!is.na(unique(pdat[["COR.RACA"]])))-1
+d.seg = -1*dodge*x.seg/2
+
+
+pwc1 = pwc[["score.dif"]][["GROUP"]]
+pwc2 = pwc1[pwc[["score.dif"]][["GROUP"]]$p.adj.signif != "ns",]
+
+if (!is.null(pwc1) && nrow(pwc2) > 0) {
+  pwc2 = rstatix::add_xy_position(pwc2, dodge = dodge, fun = "mean_ci")
+  
+  for (f in sort(unique(pdat[["COR.RACA"]]))) {
+    fbool <- pwc2[["COR.RACA"]] == f
+    if (sum(fbool) > 0) {
+      pwc2$xmin[which(fbool)] <- pwc2$xmin[which(fbool)]+d.seg
+      pwc2$xmax[which(fbool)] <- pwc2$xmax[which(fbool)]+d.seg
+    }
+    d.seg <- d.seg + dodge
+  }
+} 
+
+pwc1g <- pwc[["score.dif"]][["COR.RACA"]]
+pwc2g <- pwc1g[pwc[["score.dif"]][["COR.RACA"]]$p.adj.signif != "ns",]
+
+if (!is.null(pwc1g) && nrow(pwc2g) > 0) {
+  pwc2g$y.position <- sapply(seq(1,nrow(pwc2g)), FUN = function(i) {
+    rw <- as.list(pwc2g[i,])
+    resp = -Inf
+    for (atr2 in unique(pdat[["COR.RACA"]])) {
+      idx = which(pdat[["GROUP"]] == rw[["GROUP"]] & pdat[["COR.RACA"]] == atr2)
+      rmax = max(mean_ci(pdat[["score.dif"]][c(idx)]))
+      if (rmax > resp) resp <- rmax
+    }
+    return(resp)
+  })
+  pwc2g$xpos <- sapply(seq(1,nrow(pwc2g)), FUN = function(i) {
+    rw <- as.list(pwc2g[i,])
+    tmp <- add_x_position(pwc[["score.dif"]][["GROUP"]])
+    min(tmp$xmin[which(tmp$group1 == rw[["GROUP"]])],
+        tmp$xmax[which(tmp$group2 == rw[["GROUP"]])])
+  })
+  pwc2g$xmin <- pwc2g$xpos - abs(dodge*x.seg/2) 
+  pwc2g$xmax <- pwc2g$xpos + abs(dodge*x.seg/2)
+}
+
+if (!is.null(pwc1) && nrow(pwc2) > 0) {
+  pwc2$r <- sapply(abs(pwc2$estimate)/1, FUN = function(x) {
+     ifelse(x < 0.0001, "<1%", paste0(round(x*100,2), "%"))
+  })
+}
+
+pd <- ggplot2::position_dodge(width = sum(!is.na(unique(pwc2[["COR.RACA"]])))*dodge)
+
+lp <- ggpubr::ggline(pdat, x="GROUP", y = "score.dif", color = "COR.RACA", linetype = "COR.RACA",
+                       palette = color[["COR.RACA"]], plot_type='b', size=2,
+                       position = pd, add = "mean_ci", ylab = "")
+
+if (!is.null(pwc1) && nrow(pwc2) > 0)
+  lp <- lp + ggpubr::stat_pvalue_manual(pwc2, color = "COR.RACA", linetype = "COR.RACA",
+                                          hide.ns = T, tip.length = 0,
+                                          label = "{ r } ({ p.adj.signif })")
+
+if (!is.null(pwc1g) && nrow(pwc2g) > 0) {
+  y.pos.min = max(pwc2g$y.position)/10
+  if (nrow(pwc2) > 0)
+    y.pos.min = max(pwc2$y.position, pwc2g$y.position)/10
+  
+  pwc2g$r <- sapply(abs(pwc2g$estimate)/1, FUN = function(x) {
+     ifelse(x < 0.0001, "<1%", paste0(round(x*100,2), "%"))
+  })
+  pwc2g$y.position <- pwc2g$y.position + y.pos.min
+  
+  for (i in which(pwc2g$p.adj < 0.05)) {
+    x1 = pwc2g$xmin[i]
+    x2 = pwc2g$xmax[i]
+    y.pos = pwc2g$y.position[i]
+    label = pwc2g$p.adj.signif[i]
+    label = paste0(pwc2g$r[i]," (",label,")")
+    
+    lp <- lp + ggplot2::geom_segment(x = x1, y = y.pos, xend = x2, yend = y.pos) +
+      ggplot2::geom_text(x=(x1+x2)/2, y = y.pos+y.pos.min/3, label=label)
+  }
+}
+
+lp + labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+                            dof.res, ")=", statistic, pval),
+          caption = get_pwc_label(pwc[["score.dif"]][["COR.RACA"]])) +
+  xlab("") + ylab("") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+
+# Two-way factor analysis for: *score ~ GROUP:LOCAL*
+
+
+```{r}
+pdat = remove_group_data(
+  dat[!is.na(dat[["GROUP"]]) & !is.na(dat[["LOCAL"]]),],
+  "score.dif", c("GROUP","LOCAL"))
+
+pdat.long <- rbind(pdat[,c("id","GROUP","LOCAL")],
+                   pdat[,c("id","GROUP","LOCAL")])
+pdat.long[["time"]] <- c(rep("pre", nrow(pdat)), rep("pos", nrow(pdat)))
+pdat.long[["time"]] <- factor(pdat.long[["time"]], c("pre","pos"))
+pdat.long[["score"]] <- c(pdat[["score.pre"]], pdat[["score.pos"]])
+
+y.position.min <- abs(
+  max(pdat.long[["score"]])
+  - min(pdat.long[["score"]]))/15
+
+lvars = as.list(c("score.dif","score.pos","score.pre"))
+names(lvars) = unlist(lvars)
+```
+
+## Pre-test and Post-test PairWise comparisons for: *score ~ GROUP:LOCAL*
+
+```{r}
+pwc.long <- group_by(pdat.long, GROUP:LOCAL) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+df <- pwc.long[,c(".y.","GROUP:LOCAL","group1","group2","n1","n2","estimate",
+                  "statistic","p.adj","p.adj.signif")]
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+### Plot to compare pre- and post-test
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+pwc.long <- group_by(pdat.long, GROUP, LOCAL) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+stat.test <- pwc.long %>% add_xy_position(x = "time", fun = "mean_ci")
+sidx = which(stat.test$p.adj.signif != "ns")
+stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+
+gg <- ggline(
+  pdat.long, x = "time", y = "score",
+  color = "LOCAL", linetype = "LOCAL", shape = "LOCAL", size = 1.5,
+  facet.by = "GROUP", add = c("mean_ci"),
+  position = position_dodge(width = 0.3), palette = color[["LOCAL"]])
+
+pdat.long$xj = jitter(as.numeric(pdat.long[["time"]]), amount=.1)
+pdat.long$yj = jitter(pdat.long[["score"]], amount = .01)
+
+gg + geom_point(
+  data = pdat.long, aes_string(x="xj",y="yj",colour="LOCAL"), size=0.5) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    position = position_dodge(width = 0.3), color = "LOCAL",
+    label = "{ p.adj } ({ p.adj.signif })") + xlab("") + ylab("") +
+  ylim(min(pdat.long$yj), max(pdat.long$yj)) +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+### New plot including percentagens in the differences
+
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+stat.test <- pwc.long %>% add_xy_position(x = "time", fun = "mean_ci")
+
+stat.test$r <- sapply(abs(stat.test$estimate)/1, FUN = function(x) {
+   ifelse(x < 0.0001, "<1%", paste0(round(x*100,2), "%"))
+})
+
+gg <- ggline(
+  pdat.long, x = "time", y = "score",
+  color = "LOCAL", linetype = "LOCAL", shape = "LOCAL", size = 2,
+  facet.by = "GROUP", add = c("mean_ci"),
+  position = position_dodge(width = 0.3), palette = color[["LOCAL"]]) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    color = "LOCAL",
+    label = "{ r } ({ p.adj.signif })") + xlab("") + ylab("")
+
+gg + theme(strip.text = element_text(size = 14),
+           axis.text = element_text(size = 14))
+```
+
+
+## Scheirer and Wilcoxon PairWise comparisons for: *score ~ GROUP:LOCAL*
+
+
+```{r}
+sch <- lapply(lvars, FUN = function(x) {
+  scheirer.test(pdat, x, c("GROUP","LOCAL"), as.table = T) 
+})
+df <- do.call(rbind.fill, sch)
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+```{r}
+pwc <- lapply(lvars, FUN = function(x) {
+  list(
+    GROUP = tryCatch(pairwise_wilcox_test(group_by(pdat, LOCAL),
+                                 as.formula(paste0(x," ~ GROUP")), detailed = T)
+                         , error = function(e) NULL),
+    LOCAL = tryCatch(pairwise_wilcox_test(group_by(pdat, GROUP),
+                                 as.formula(paste0(x," ~ LOCAL")), detailed = T)
+                         , error = function(e) NULL)
+  )
+})
+
+df <- do.call(rbind.fill, lapply(pwc, FUN =  function(x) {
+  do.call(rbind.fill, x)
+}))
+
+ivs = c()
+if ("GROUP" %in% colnames(df)) ivs = c(ivs, "GROUP")
+if ("LOCAL" %in% colnames(df)) ivs = c(ivs, "LOCAL")
+df <- df[,c(".y.",ivs,"group1","group2","n1","n2","estimate",
+            "statistic","p.adj","p.adj.signif")]
+```
+
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+### Plot to compare results from pre and post
+
+```{r}
+plots <- lapply(lvars, FUN = function(y) {
+  livs = list("GROUP", "LOCAL")
+  names(livs) = unlist(livs)
+  lapply(livs, FUN = function(x) {
+    iv2 = setdiff(names(livs), x)
+    if (!is.null(pwc[[y]][[iv2]])) {
+      stat.test <- pwc[[y]][[iv2]] %>% add_xy_position(x = x, fun = "max")
+      sidx = which(stat.test$p.adj.signif != "ns")
+      stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+      
+      ggboxplot(pdat, x = x, y = y, fill = iv2, palette = color[[iv2]]) +
+        stat_pvalue_manual(stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+                           label="{ p.adj } ({ p.adj.signif })") + xlab("")
+    }
+  })
+})
+```
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["GROUP"]]) &&
+    !is.null(plots[["score.pos"]][["GROUP"]])) {
+  egg::ggarrange(plots[["score.pre"]][["GROUP"]],
+                 plots[["score.pos"]][["GROUP"]], nrow = 1)  
+}
+```
+
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["LOCAL"]]) &&
+    !is.null(plots[["score.pos"]][["LOCAL"]])) {
+  egg::ggarrange(plots[["score.pre"]][["LOCAL"]],
+                 plots[["score.pos"]][["LOCAL"]], nrow = 1)
+}
+```
+
+### Plot to compare differences (1st)
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "GROUP:LOCAL") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["GROUP"]]))
+  plots[["score.dif"]][["GROUP"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["LOCAL"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+### Plot to compare differences (1st)
+
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "GROUP:LOCAL") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["LOCAL"]]))
+  plots[["score.dif"]][["LOCAL"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["GROUP"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+### Plot to compare differences using in one comparison
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "GROUP:LOCAL") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+dodge = 0.08
+x.seg = sum(!is.na(unique(pdat[["LOCAL"]])))-1
+d.seg = -1*dodge*x.seg/2
+
+
+pwc1 = pwc[["score.dif"]][["GROUP"]]
+pwc2 = pwc1[pwc[["score.dif"]][["GROUP"]]$p.adj.signif != "ns",]
+
+if (!is.null(pwc1) && nrow(pwc2) > 0) {
+  pwc2 = rstatix::add_xy_position(pwc2, dodge = dodge, fun = "mean_ci")
+  
+  for (f in sort(unique(pdat[["LOCAL"]]))) {
+    fbool <- pwc2[["LOCAL"]] == f
+    if (sum(fbool) > 0) {
+      pwc2$xmin[which(fbool)] <- pwc2$xmin[which(fbool)]+d.seg
+      pwc2$xmax[which(fbool)] <- pwc2$xmax[which(fbool)]+d.seg
+    }
+    d.seg <- d.seg + dodge
+  }
+} 
+
+pwc1g <- pwc[["score.dif"]][["LOCAL"]]
+pwc2g <- pwc1g[pwc[["score.dif"]][["LOCAL"]]$p.adj.signif != "ns",]
+
+if (!is.null(pwc1g) && nrow(pwc2g) > 0) {
+  pwc2g$y.position <- sapply(seq(1,nrow(pwc2g)), FUN = function(i) {
+    rw <- as.list(pwc2g[i,])
+    resp = -Inf
+    for (atr2 in unique(pdat[["LOCAL"]])) {
+      idx = which(pdat[["GROUP"]] == rw[["GROUP"]] & pdat[["LOCAL"]] == atr2)
+      rmax = max(mean_ci(pdat[["score.dif"]][c(idx)]))
+      if (rmax > resp) resp <- rmax
+    }
+    return(resp)
+  })
+  pwc2g$xpos <- sapply(seq(1,nrow(pwc2g)), FUN = function(i) {
+    rw <- as.list(pwc2g[i,])
+    tmp <- add_x_position(pwc[["score.dif"]][["GROUP"]])
+    min(tmp$xmin[which(tmp$group1 == rw[["GROUP"]])],
+        tmp$xmax[which(tmp$group2 == rw[["GROUP"]])])
+  })
+  pwc2g$xmin <- pwc2g$xpos - abs(dodge*x.seg/2) 
+  pwc2g$xmax <- pwc2g$xpos + abs(dodge*x.seg/2)
+}
+
+if (!is.null(pwc1) && nrow(pwc2) > 0) {
+  pwc2$r <- sapply(abs(pwc2$estimate)/1, FUN = function(x) {
+     ifelse(x < 0.0001, "<1%", paste0(round(x*100,2), "%"))
+  })
+}
+
+pd <- ggplot2::position_dodge(width = sum(!is.na(unique(pwc2[["LOCAL"]])))*dodge)
+
+lp <- ggpubr::ggline(pdat, x="GROUP", y = "score.dif", color = "LOCAL", linetype = "LOCAL",
+                       palette = color[["LOCAL"]], plot_type='b', size=2,
+                       position = pd, add = "mean_ci", ylab = "")
+
+if (!is.null(pwc1) && nrow(pwc2) > 0)
+  lp <- lp + ggpubr::stat_pvalue_manual(pwc2, color = "LOCAL", linetype = "LOCAL",
+                                          hide.ns = T, tip.length = 0,
+                                          label = "{ r } ({ p.adj.signif })")
+
+if (!is.null(pwc1g) && nrow(pwc2g) > 0) {
+  y.pos.min = max(pwc2g$y.position)/10
+  if (nrow(pwc2) > 0)
+    y.pos.min = max(pwc2$y.position, pwc2g$y.position)/10
+  
+  pwc2g$r <- sapply(abs(pwc2g$estimate)/1, FUN = function(x) {
+     ifelse(x < 0.0001, "<1%", paste0(round(x*100,2), "%"))
+  })
+  pwc2g$y.position <- pwc2g$y.position + y.pos.min
+  
+  for (i in which(pwc2g$p.adj < 0.05)) {
+    x1 = pwc2g$xmin[i]
+    x2 = pwc2g$xmax[i]
+    y.pos = pwc2g$y.position[i]
+    label = pwc2g$p.adj.signif[i]
+    label = paste0(pwc2g$r[i]," (",label,")")
+    
+    lp <- lp + ggplot2::geom_segment(x = x1, y = y.pos, xend = x2, yend = y.pos) +
+      ggplot2::geom_text(x=(x1+x2)/2, y = y.pos+y.pos.min/3, label=label)
+  }
+}
+
+lp + labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+                            dof.res, ")=", statistic, pval),
+          caption = get_pwc_label(pwc[["score.dif"]][["LOCAL"]])) +
+  xlab("") + ylab("") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+
+# Two-way factor analysis for: *score ~ GROUP:SERIE*
+
+
+```{r}
+pdat = remove_group_data(
+  dat[!is.na(dat[["GROUP"]]) & !is.na(dat[["SERIE"]]),],
+  "score.dif", c("GROUP","SERIE"))
+
+pdat.long <- rbind(pdat[,c("id","GROUP","SERIE")],
+                   pdat[,c("id","GROUP","SERIE")])
+pdat.long[["time"]] <- c(rep("pre", nrow(pdat)), rep("pos", nrow(pdat)))
+pdat.long[["time"]] <- factor(pdat.long[["time"]], c("pre","pos"))
+pdat.long[["score"]] <- c(pdat[["score.pre"]], pdat[["score.pos"]])
+
+y.position.min <- abs(
+  max(pdat.long[["score"]])
+  - min(pdat.long[["score"]]))/15
+
+lvars = as.list(c("score.dif","score.pos","score.pre"))
+names(lvars) = unlist(lvars)
+```
+
+## Pre-test and Post-test PairWise comparisons for: *score ~ GROUP:SERIE*
+
+```{r}
+pwc.long <- group_by(pdat.long, GROUP:SERIE) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+df <- pwc.long[,c(".y.","GROUP:SERIE","group1","group2","n1","n2","estimate",
+                  "statistic","p.adj","p.adj.signif")]
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+### Plot to compare pre- and post-test
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+pwc.long <- group_by(pdat.long, GROUP, SERIE) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+stat.test <- pwc.long %>% add_xy_position(x = "time", fun = "mean_ci")
+sidx = which(stat.test$p.adj.signif != "ns")
+stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+
+gg <- ggline(
+  pdat.long, x = "time", y = "score",
+  color = "SERIE", linetype = "SERIE", shape = "SERIE", size = 1.5,
+  facet.by = "GROUP", add = c("mean_ci"),
+  position = position_dodge(width = 0.3), palette = color[["SERIE"]])
+
+pdat.long$xj = jitter(as.numeric(pdat.long[["time"]]), amount=.1)
+pdat.long$yj = jitter(pdat.long[["score"]], amount = .01)
+
+gg + geom_point(
+  data = pdat.long, aes_string(x="xj",y="yj",colour="SERIE"), size=0.5) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    position = position_dodge(width = 0.3), color = "SERIE",
+    label = "{ p.adj } ({ p.adj.signif })") + xlab("") + ylab("") +
+  ylim(min(pdat.long$yj), max(pdat.long$yj)) +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+### New plot including percentagens in the differences
+
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+stat.test <- pwc.long %>% add_xy_position(x = "time", fun = "mean_ci")
+
+stat.test$r <- sapply(abs(stat.test$estimate)/1, FUN = function(x) {
+   ifelse(x < 0.0001, "<1%", paste0(round(x*100,2), "%"))
+})
+
+gg <- ggline(
+  pdat.long, x = "time", y = "score",
+  color = "SERIE", linetype = "SERIE", shape = "SERIE", size = 2,
+  facet.by = "GROUP", add = c("mean_ci"),
+  position = position_dodge(width = 0.3), palette = color[["SERIE"]]) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    color = "SERIE",
+    label = "{ r } ({ p.adj.signif })") + xlab("") + ylab("")
+
+gg + theme(strip.text = element_text(size = 14),
+           axis.text = element_text(size = 14))
+```
+
+
+## Scheirer and Wilcoxon PairWise comparisons for: *score ~ GROUP:SERIE*
+
+
+```{r}
+sch <- lapply(lvars, FUN = function(x) {
+  scheirer.test(pdat, x, c("GROUP","SERIE"), as.table = T) 
+})
+df <- do.call(rbind.fill, sch)
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+```{r}
+pwc <- lapply(lvars, FUN = function(x) {
+  list(
+    GROUP = tryCatch(pairwise_wilcox_test(group_by(pdat, SERIE),
+                                 as.formula(paste0(x," ~ GROUP")), detailed = T)
+                         , error = function(e) NULL),
+    SERIE = tryCatch(pairwise_wilcox_test(group_by(pdat, GROUP),
+                                 as.formula(paste0(x," ~ SERIE")), detailed = T)
+                         , error = function(e) NULL)
+  )
+})
+
+df <- do.call(rbind.fill, lapply(pwc, FUN =  function(x) {
+  do.call(rbind.fill, x)
+}))
+
+ivs = c()
+if ("GROUP" %in% colnames(df)) ivs = c(ivs, "GROUP")
+if ("SERIE" %in% colnames(df)) ivs = c(ivs, "SERIE")
+df <- df[,c(".y.",ivs,"group1","group2","n1","n2","estimate",
+            "statistic","p.adj","p.adj.signif")]
+```
+
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+### Plot to compare results from pre and post
+
+```{r}
+plots <- lapply(lvars, FUN = function(y) {
+  livs = list("GROUP", "SERIE")
+  names(livs) = unlist(livs)
+  lapply(livs, FUN = function(x) {
+    iv2 = setdiff(names(livs), x)
+    if (!is.null(pwc[[y]][[iv2]])) {
+      stat.test <- pwc[[y]][[iv2]] %>% add_xy_position(x = x, fun = "max")
+      sidx = which(stat.test$p.adj.signif != "ns")
+      stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+      
+      ggboxplot(pdat, x = x, y = y, fill = iv2, palette = color[[iv2]]) +
+        stat_pvalue_manual(stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+                           label="{ p.adj } ({ p.adj.signif })") + xlab("")
+    }
+  })
+})
+```
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["GROUP"]]) &&
+    !is.null(plots[["score.pos"]][["GROUP"]])) {
+  egg::ggarrange(plots[["score.pre"]][["GROUP"]],
+                 plots[["score.pos"]][["GROUP"]], nrow = 1)  
+}
+```
+
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["SERIE"]]) &&
+    !is.null(plots[["score.pos"]][["SERIE"]])) {
+  egg::ggarrange(plots[["score.pre"]][["SERIE"]],
+                 plots[["score.pos"]][["SERIE"]], nrow = 1)
+}
+```
+
+### Plot to compare differences (1st)
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "GROUP:SERIE") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["GROUP"]]))
+  plots[["score.dif"]][["GROUP"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["SERIE"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+### Plot to compare differences (1st)
+
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "GROUP:SERIE") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["SERIE"]]))
+  plots[["score.dif"]][["SERIE"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["GROUP"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+### Plot to compare differences using in one comparison
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "GROUP:SERIE") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+dodge = 0.08
+x.seg = sum(!is.na(unique(pdat[["SERIE"]])))-1
+d.seg = -1*dodge*x.seg/2
+
+
+pwc1 = pwc[["score.dif"]][["GROUP"]]
+pwc2 = pwc1[pwc[["score.dif"]][["GROUP"]]$p.adj.signif != "ns",]
+
+if (!is.null(pwc1) && nrow(pwc2) > 0) {
+  pwc2 = rstatix::add_xy_position(pwc2, dodge = dodge, fun = "mean_ci")
+  
+  for (f in sort(unique(pdat[["SERIE"]]))) {
+    fbool <- pwc2[["SERIE"]] == f
+    if (sum(fbool) > 0) {
+      pwc2$xmin[which(fbool)] <- pwc2$xmin[which(fbool)]+d.seg
+      pwc2$xmax[which(fbool)] <- pwc2$xmax[which(fbool)]+d.seg
+    }
+    d.seg <- d.seg + dodge
+  }
+} 
+
+pwc1g <- pwc[["score.dif"]][["SERIE"]]
+pwc2g <- pwc1g[pwc[["score.dif"]][["SERIE"]]$p.adj.signif != "ns",]
+
+if (!is.null(pwc1g) && nrow(pwc2g) > 0) {
+  pwc2g$y.position <- sapply(seq(1,nrow(pwc2g)), FUN = function(i) {
+    rw <- as.list(pwc2g[i,])
+    resp = -Inf
+    for (atr2 in unique(pdat[["SERIE"]])) {
+      idx = which(pdat[["GROUP"]] == rw[["GROUP"]] & pdat[["SERIE"]] == atr2)
+      rmax = max(mean_ci(pdat[["score.dif"]][c(idx)]))
+      if (rmax > resp) resp <- rmax
+    }
+    return(resp)
+  })
+  pwc2g$xpos <- sapply(seq(1,nrow(pwc2g)), FUN = function(i) {
+    rw <- as.list(pwc2g[i,])
+    tmp <- add_x_position(pwc[["score.dif"]][["GROUP"]])
+    min(tmp$xmin[which(tmp$group1 == rw[["GROUP"]])],
+        tmp$xmax[which(tmp$group2 == rw[["GROUP"]])])
+  })
+  pwc2g$xmin <- pwc2g$xpos - abs(dodge*x.seg/2) 
+  pwc2g$xmax <- pwc2g$xpos + abs(dodge*x.seg/2)
+}
+
+if (!is.null(pwc1) && nrow(pwc2) > 0) {
+  pwc2$r <- sapply(abs(pwc2$estimate)/1, FUN = function(x) {
+     ifelse(x < 0.0001, "<1%", paste0(round(x*100,2), "%"))
+  })
+}
+
+pd <- ggplot2::position_dodge(width = sum(!is.na(unique(pwc2[["SERIE"]])))*dodge)
+
+lp <- ggpubr::ggline(pdat, x="GROUP", y = "score.dif", color = "SERIE", linetype = "SERIE",
+                       palette = color[["SERIE"]], plot_type='b', size=2,
+                       position = pd, add = "mean_ci", ylab = "")
+
+if (!is.null(pwc1) && nrow(pwc2) > 0)
+  lp <- lp + ggpubr::stat_pvalue_manual(pwc2, color = "SERIE", linetype = "SERIE",
+                                          hide.ns = T, tip.length = 0,
+                                          label = "{ r } ({ p.adj.signif })")
+
+if (!is.null(pwc1g) && nrow(pwc2g) > 0) {
+  y.pos.min = max(pwc2g$y.position)/10
+  if (nrow(pwc2) > 0)
+    y.pos.min = max(pwc2$y.position, pwc2g$y.position)/10
+  
+  pwc2g$r <- sapply(abs(pwc2g$estimate)/1, FUN = function(x) {
+     ifelse(x < 0.0001, "<1%", paste0(round(x*100,2), "%"))
+  })
+  pwc2g$y.position <- pwc2g$y.position + y.pos.min
+  
+  for (i in which(pwc2g$p.adj < 0.05)) {
+    x1 = pwc2g$xmin[i]
+    x2 = pwc2g$xmax[i]
+    y.pos = pwc2g$y.position[i]
+    label = pwc2g$p.adj.signif[i]
+    label = paste0(pwc2g$r[i]," (",label,")")
+    
+    lp <- lp + ggplot2::geom_segment(x = x1, y = y.pos, xend = x2, yend = y.pos) +
+      ggplot2::geom_text(x=(x1+x2)/2, y = y.pos+y.pos.min/3, label=label)
+  }
+}
+
+lp + labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+                            dof.res, ")=", statistic, pval),
+          caption = get_pwc_label(pwc[["score.dif"]][["SERIE"]])) +
+  xlab("") + ylab("") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+
+# Two-way factor analysis for: *score ~ GROUP:ESCOLA*
+
+
+```{r}
+pdat = remove_group_data(
+  dat[!is.na(dat[["GROUP"]]) & !is.na(dat[["ESCOLA"]]),],
+  "score.dif", c("GROUP","ESCOLA"))
+
+pdat.long <- rbind(pdat[,c("id","GROUP","ESCOLA")],
+                   pdat[,c("id","GROUP","ESCOLA")])
+pdat.long[["time"]] <- c(rep("pre", nrow(pdat)), rep("pos", nrow(pdat)))
+pdat.long[["time"]] <- factor(pdat.long[["time"]], c("pre","pos"))
+pdat.long[["score"]] <- c(pdat[["score.pre"]], pdat[["score.pos"]])
+
+y.position.min <- abs(
+  max(pdat.long[["score"]])
+  - min(pdat.long[["score"]]))/15
+
+lvars = as.list(c("score.dif","score.pos","score.pre"))
+names(lvars) = unlist(lvars)
+```
+
+## Pre-test and Post-test PairWise comparisons for: *score ~ GROUP:ESCOLA*
+
+```{r}
+pwc.long <- group_by(pdat.long, GROUP:ESCOLA) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+df <- pwc.long[,c(".y.","GROUP:ESCOLA","group1","group2","n1","n2","estimate",
+                  "statistic","p.adj","p.adj.signif")]
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+### Plot to compare pre- and post-test
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+pwc.long <- group_by(pdat.long, GROUP, ESCOLA) %>%
+  pairwise_wilcox_test(score ~ time, detailed = T)
+
+stat.test <- pwc.long %>% add_xy_position(x = "time", fun = "mean_ci")
+sidx = which(stat.test$p.adj.signif != "ns")
+stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+
+gg <- ggline(
+  pdat.long, x = "time", y = "score",
+  color = "ESCOLA", linetype = "ESCOLA", shape = "ESCOLA", size = 1.5,
+  facet.by = "GROUP", add = c("mean_ci"),
+  position = position_dodge(width = 0.3), palette = color[["ESCOLA"]])
+
+pdat.long$xj = jitter(as.numeric(pdat.long[["time"]]), amount=.1)
+pdat.long$yj = jitter(pdat.long[["score"]], amount = .01)
+
+gg + geom_point(
+  data = pdat.long, aes_string(x="xj",y="yj",colour="ESCOLA"), size=0.5) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    position = position_dodge(width = 0.3), color = "ESCOLA",
+    label = "{ p.adj } ({ p.adj.signif })") + xlab("") + ylab("") +
+  ylim(min(pdat.long$yj), max(pdat.long$yj)) +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+### New plot including percentagens in the differences
+
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+stat.test <- pwc.long %>% add_xy_position(x = "time", fun = "mean_ci")
+
+stat.test$r <- sapply(abs(stat.test$estimate)/1, FUN = function(x) {
+   ifelse(x < 0.0001, "<1%", paste0(round(x*100,2), "%"))
+})
+
+gg <- ggline(
+  pdat.long, x = "time", y = "score",
+  color = "ESCOLA", linetype = "ESCOLA", shape = "ESCOLA", size = 2,
+  facet.by = "GROUP", add = c("mean_ci"),
+  position = position_dodge(width = 0.3), palette = color[["ESCOLA"]]) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    color = "ESCOLA",
+    label = "{ r } ({ p.adj.signif })") + xlab("") + ylab("")
+
+gg + theme(strip.text = element_text(size = 14),
+           axis.text = element_text(size = 14))
+```
+
+
+## Scheirer and Wilcoxon PairWise comparisons for: *score ~ GROUP:ESCOLA*
+
+
+```{r}
+sch <- lapply(lvars, FUN = function(x) {
+  scheirer.test(pdat, x, c("GROUP","ESCOLA"), as.table = T) 
+})
+df <- do.call(rbind.fill, sch)
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+```{r}
+pwc <- lapply(lvars, FUN = function(x) {
+  list(
+    GROUP = tryCatch(pairwise_wilcox_test(group_by(pdat, ESCOLA),
+                                 as.formula(paste0(x," ~ GROUP")), detailed = T)
+                         , error = function(e) NULL),
+    ESCOLA = tryCatch(pairwise_wilcox_test(group_by(pdat, GROUP),
+                                 as.formula(paste0(x," ~ ESCOLA")), detailed = T)
+                         , error = function(e) NULL)
+  )
+})
+
+df <- do.call(rbind.fill, lapply(pwc, FUN =  function(x) {
+  do.call(rbind.fill, x)
+}))
+
+ivs = c()
+if ("GROUP" %in% colnames(df)) ivs = c(ivs, "GROUP")
+if ("ESCOLA" %in% colnames(df)) ivs = c(ivs, "ESCOLA")
+df <- df[,c(".y.",ivs,"group1","group2","n1","n2","estimate",
+            "statistic","p.adj","p.adj.signif")]
+```
+
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+### Plot to compare results from pre and post
+
+```{r}
+plots <- lapply(lvars, FUN = function(y) {
+  livs = list("GROUP", "ESCOLA")
+  names(livs) = unlist(livs)
+  lapply(livs, FUN = function(x) {
+    iv2 = setdiff(names(livs), x)
+    if (!is.null(pwc[[y]][[iv2]])) {
+      stat.test <- pwc[[y]][[iv2]] %>% add_xy_position(x = x, fun = "max")
+      sidx = which(stat.test$p.adj.signif != "ns")
+      stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+      
+      ggboxplot(pdat, x = x, y = y, fill = iv2, palette = color[[iv2]]) +
+        stat_pvalue_manual(stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+                           label="{ p.adj } ({ p.adj.signif })") + xlab("")
+    }
+  })
+})
+```
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["GROUP"]]) &&
+    !is.null(plots[["score.pos"]][["GROUP"]])) {
+  egg::ggarrange(plots[["score.pre"]][["GROUP"]],
+                 plots[["score.pos"]][["GROUP"]], nrow = 1)  
+}
+```
+
+
+```{r, dpi=300, fig.width=24, fig.height=12}
+if (!is.null(plots[["score.pre"]][["ESCOLA"]]) &&
+    !is.null(plots[["score.pos"]][["ESCOLA"]])) {
+  egg::ggarrange(plots[["score.pre"]][["ESCOLA"]],
+                 plots[["score.pos"]][["ESCOLA"]], nrow = 1)
+}
+```
+
+### Plot to compare differences (1st)
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "GROUP:ESCOLA") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["GROUP"]]))
+  plots[["score.dif"]][["GROUP"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["ESCOLA"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+### Plot to compare differences (1st)
+
+
+```{r, dpi=300, fig.width=12, fig.height=12}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "GROUP:ESCOLA") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["score.dif"]][["ESCOLA"]]))
+  plots[["score.dif"]][["ESCOLA"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["score.dif"]][["GROUP"]])) +
+    ylab("score (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+### Plot to compare differences using in one comparison
+
+```{r, dpi=300, fig.width=14, fig.height=10}
+psch = sch[["score.dif"]]
+idx = which(psch$Effect == "GROUP:ESCOLA") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+dodge = 0.08
+x.seg = sum(!is.na(unique(pdat[["ESCOLA"]])))-1
+d.seg = -1*dodge*x.seg/2
+
+
+pwc1 = pwc[["score.dif"]][["GROUP"]]
+pwc2 = pwc1[pwc[["score.dif"]][["GROUP"]]$p.adj.signif != "ns",]
+
+if (!is.null(pwc1) && nrow(pwc2) > 0) {
+  pwc2 = rstatix::add_xy_position(pwc2, dodge = dodge, fun = "mean_ci")
+  
+  for (f in sort(unique(pdat[["ESCOLA"]]))) {
+    fbool <- pwc2[["ESCOLA"]] == f
+    if (sum(fbool) > 0) {
+      pwc2$xmin[which(fbool)] <- pwc2$xmin[which(fbool)]+d.seg
+      pwc2$xmax[which(fbool)] <- pwc2$xmax[which(fbool)]+d.seg
+    }
+    d.seg <- d.seg + dodge
+  }
+} 
+
+pwc1g <- pwc[["score.dif"]][["ESCOLA"]]
+pwc2g <- pwc1g[pwc[["score.dif"]][["ESCOLA"]]$p.adj.signif != "ns",]
+
+if (!is.null(pwc1g) && nrow(pwc2g) > 0) {
+  pwc2g$y.position <- sapply(seq(1,nrow(pwc2g)), FUN = function(i) {
+    rw <- as.list(pwc2g[i,])
+    resp = -Inf
+    for (atr2 in unique(pdat[["ESCOLA"]])) {
+      idx = which(pdat[["GROUP"]] == rw[["GROUP"]] & pdat[["ESCOLA"]] == atr2)
+      rmax = max(mean_ci(pdat[["score.dif"]][c(idx)]))
+      if (rmax > resp) resp <- rmax
+    }
+    return(resp)
+  })
+  pwc2g$xpos <- sapply(seq(1,nrow(pwc2g)), FUN = function(i) {
+    rw <- as.list(pwc2g[i,])
+    tmp <- add_x_position(pwc[["score.dif"]][["GROUP"]])
+    min(tmp$xmin[which(tmp$group1 == rw[["GROUP"]])],
+        tmp$xmax[which(tmp$group2 == rw[["GROUP"]])])
+  })
+  pwc2g$xmin <- pwc2g$xpos - abs(dodge*x.seg/2) 
+  pwc2g$xmax <- pwc2g$xpos + abs(dodge*x.seg/2)
+}
+
+if (!is.null(pwc1) && nrow(pwc2) > 0) {
+  pwc2$r <- sapply(abs(pwc2$estimate)/1, FUN = function(x) {
+     ifelse(x < 0.0001, "<1%", paste0(round(x*100,2), "%"))
+  })
+}
+
+pd <- ggplot2::position_dodge(width = sum(!is.na(unique(pwc2[["ESCOLA"]])))*dodge)
+
+lp <- ggpubr::ggline(pdat, x="GROUP", y = "score.dif", color = "ESCOLA", linetype = "ESCOLA",
+                       palette = color[["ESCOLA"]], plot_type='b', size=2,
+                       position = pd, add = "mean_ci", ylab = "")
+
+if (!is.null(pwc1) && nrow(pwc2) > 0)
+  lp <- lp + ggpubr::stat_pvalue_manual(pwc2, color = "ESCOLA", linetype = "ESCOLA",
+                                          hide.ns = T, tip.length = 0,
+                                          label = "{ r } ({ p.adj.signif })")
+
+if (!is.null(pwc1g) && nrow(pwc2g) > 0) {
+  y.pos.min = max(pwc2g$y.position)/10
+  if (nrow(pwc2) > 0)
+    y.pos.min = max(pwc2$y.position, pwc2g$y.position)/10
+  
+  pwc2g$r <- sapply(abs(pwc2g$estimate)/1, FUN = function(x) {
+     ifelse(x < 0.0001, "<1%", paste0(round(x*100,2), "%"))
+  })
+  pwc2g$y.position <- pwc2g$y.position + y.pos.min
+  
+  for (i in which(pwc2g$p.adj < 0.05)) {
+    x1 = pwc2g$xmin[i]
+    x2 = pwc2g$xmax[i]
+    y.pos = pwc2g$y.position[i]
+    label = pwc2g$p.adj.signif[i]
+    label = paste0(pwc2g$r[i]," (",label,")")
+    
+    lp <- lp + ggplot2::geom_segment(x = x1, y = y.pos, xend = x2, yend = y.pos) +
+      ggplot2::geom_text(x=(x1+x2)/2, y = y.pos+y.pos.min/3, label=label)
+  }
+}
+
+lp + labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+                            dof.res, ")=", statistic, pval),
+          caption = get_pwc_label(pwc[["score.dif"]][["ESCOLA"]])) +
+  xlab("") + ylab("") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+

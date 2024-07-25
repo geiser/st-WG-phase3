@@ -1,0 +1,170 @@
+---
+title: "Non-Parametric ANCOVA tests for {{ title }}"
+author: Geiser C. Challco <geiser@alumni.usp.br>
+comment: Testes Não Parametricos ANCOVA para determinar se houve diferenças significativas
+         na aprendizagem (medido usando pre- e pos-testes).
+         
+         Non-parametric ANCOVA tests to determine whether there were significant differences
+         in the learning (measured using pre- and post-tests).
+         
+         Author - Geiser C. Challco <geiser@alumni.usp.br>
+         
+         Shiny-Statistic is distributed in the hope that it will be useful,
+         but WITHOUT ANY WARRANTY; without even the implied warranty of
+         MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+         GNU General Public License for more details.
+         
+         You should have received a copy of the GNU General Public License.
+         If not, see <https://www.gnu.org/licenses/>.
+output:
+  github_document:
+    toc: true
+  word_document:
+    toc: true
+  html_document:
+    toc: true
+fontsize: 10pt
+---
+
+
+```{r setup, include=FALSE}
+# Install and Load Packages
+if (!'remotes' %in% rownames(installed.packages())) install.packages('remotes')
+if (!"rshinystatistics" %in% rownames(installed.packages())) {
+  remotes::install_github("geiser/rshinystatistics")
+} else if (packageVersion("rshinystatistics") < "0.0.0.9900") {
+  remotes::install_github("geiser/rshinystatistics")
+}
+
+wants <- c('ggplot2','ggpubr','rshinystatistics','utils','randomcoloR')
+has <- wants %in% rownames(installed.packages())
+if (any(!has)) install.packages(wants[!has])
+
+library(readxl)
+
+library(shiny)
+library(esquisse)
+library(scales)
+library(knitr)
+library(rmarkdown)
+
+library(utils)
+library(ggpubr)
+library(ggplot2)
+library(randomcoloR)
+
+library(plyr)
+library(dplyr)
+
+library(rstatix)
+library(rshinystatistics)
+```
+
+```{r, include=FALSE, purl=FALSE}
+options(knitr.kable.NA = '')
+```
+
+# Setting Initial Variables
+
+```{r}
+dv = "{{ dv }}"
+dv.pos = "{{ dv.pos }}"
+dv.pre = "{{ dv.pre }}"
+dv.dif = "{{ dv.dif }}"
+
+fatores2 <- c({{ paste0(paste0('"', fatores ,'"'), collapse = ",") }})
+lfatores2 <- as.list(fatores2)
+names(lfatores2) <- fatores2
+
+fatores1 <- c("{{ group  }}", fatores2)
+lfatores1 <- as.list(fatores1)
+names(lfatores1) <- fatores1
+
+lfatores <- c(lfatores1)
+
+color <- list()
+color[["prepost"]] = c("#ffee65","#f28e2B")
+color[["{{ group  }}"]] = c({{ paste0(paste0('"', col.group ,'"'), collapse = ",") }})
+color[["SEXO"]] = c("#FF007F","#4D4DFF")
+color[["ZONA"]] = c("#AA00FF","#00BBBB")
+color[["COR.RACA"]] = c("#b97100","#75c298","#D6B91C","#9F262F","#848283")
+color[["LOCAL"]] = c("#AA00FF","#00BBBB")
+color[["SERIE"]] = c("#FF0000","#BF0040","#0000FF","#4000BF")
+color[["ESCOLA"]] = c("#d8668c","#ff7f7f","#ddf0b2","#b2b2ff","#b299e5")
+
+level <- list()
+level[["{{ group }}"]] = {{ paste0('c("',paste0(val.group, collapse = '","'),'")') }}
+level[["SEXO"]] = c("F","M")
+level[["ZONA"]] = c("Urbana","Rural")
+level[["COR.RACA"]] = c("Parda", "Branca", "Amarela", "Indígena", "Preta")
+level[["LOCAL"]] = c("Urbana","Rural")
+level[["SERIE"]] = c("6a","7a","8a","9a")
+level[["ESCOLA"]] = c("PROF MARIA","PADRE ANCHIETA","PROF RICARDO","PADRE MOUSINHO","VER PORFIRIO")
+
+
+# ..
+
+gdat <- read_excel("../data/{{ dfile }}", sheet = "main")
+gdat <- gdat[!is.na(gdat[["{{ group }}"]]),]
+gdat <- gdat[!is.na(gdat[[dv.pre]]) & !is.na(gdat[[dv.pos]]),]
+gdat[[dv.dif]] <- gdat[[dv.pos]] - gdat[[dv.pre]] 
+
+{{ dat.filter }}
+
+dat <- gdat
+dat${{ group }} <- factor(dat[["{{ group  }}"]], level[["{{ group  }}"]])
+for (coln in c(names(lfatores))) {
+  if (length(level[[coln]]) > 0)
+    plevel = level[[coln]][level[[coln]] %in% unique(dat[[coln]])]
+  else
+    plevel = unique(dat[[coln]])[!is.na(unique(dat[[coln]]))]
+  
+  dat[[coln]] <- factor(dat[[coln]], plevel)
+}
+
+dat <- dat[,c("id", names(lfatores), dv.pre, dv.pos, dv.dif)]
+
+dat.long <- rbind(dat, dat)
+dat.long$time <- c(rep("pre", nrow(dat)), rep("pos", nrow(dat)))
+dat.long$time <- factor(dat.long$time, c("pre","pos"))
+dat.long[[dv]] <- c(dat[[dv.pre]], dat[[dv.pos]])
+
+
+for (f in c("{{ group  }}", names(lfatores))) {
+  if (is.null(color[[f]]) && length(unique(dat[[f]])) > 0) 
+      color[[f]] <- distinctColorPalette(length(unique(dat[[f]])))
+}
+
+for (f in c(fatores2)) {
+  if (is.null(color[[paste0("{{ group  }}:",f)]]) && length(unique(dat[[f]])) > 0)
+    color[[paste0("{{ group  }}:",f)]] <- distinctColorPalette(
+      length(unique(dat[["{{ group  }}"]]))*length(unique(dat[[f]])))
+}
+
+ldat <- list()
+laov <- list()
+lpwc <- list()
+lemms <- list()
+```
+
+# Descriptive Statistics of Initial Data
+
+```{r}
+df <- get.descriptives(dat, c(dv.pre, dv.pos, dv.dif), c("{{ group  }}"),
+                       symmetry.test = T, normality.test = F)
+df <- plyr::rbind.fill(
+  df, do.call(plyr::rbind.fill, lapply(lfatores2, FUN = function(f) {
+    if (nrow(dat) > 0 && sum(!is.na(unique(dat[[f]]))) > 1)
+      get.descriptives(dat, c(dv.pre,dv.pos), c("{{ group  }}", f), include.global = F,
+                       symmetry.test = T, normality.test = F)
+    }))
+)
+df <- df[,c("variable",fatores1[fatores1 %in% colnames(df)],
+            colnames(df)[!colnames(df) %in% c(fatores1,"variable")])]
+```
+
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+

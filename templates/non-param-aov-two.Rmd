@@ -1,0 +1,325 @@
+
+# {{ title }}
+
+
+```{r}
+pdat = remove_group_data(
+  dat[!is.na(dat[["{{ iv1 }}"]]) & !is.na(dat[["{{ iv2 }}"]]),],
+  "{{ dv.dif }}", c("{{ iv1 }}","{{ iv2 }}"))
+
+pdat.long <- rbind(pdat[,c("id","{{ iv1 }}","{{ iv2 }}")],
+                   pdat[,c("id","{{ iv1 }}","{{ iv2 }}")])
+pdat.long[["{{ pivot.key }}"]] <- c(rep("pre", nrow(pdat)), rep("pos", nrow(pdat)))
+pdat.long[["{{ pivot.key }}"]] <- factor(pdat.long[["{{ pivot.key }}"]], c("pre","pos"))
+pdat.long[["{{ pivot.value }}"]] <- c(pdat[["{{ dv.pre }}"]], pdat[["{{ dv.pos }}"]])
+
+y.position.min <- abs(
+  max(pdat.long[["{{ pivot.value }}"]])
+  - min(pdat.long[["{{ pivot.value }}"]]))/15
+
+lvars = as.list(c("{{ dv.dif }}","{{ dv.pos }}","{{ dv.pre }}"))
+names(lvars) = unlist(lvars)
+```
+
+## Pre-test and Post-test PairWise comparisons for: *{{ pivot.value }} ~ {{ iv1 }}:{{ iv2 }}*
+
+```{r}
+pwc.long <- group_by(pdat.long, {{ iv1 }}:{{ iv2 }}) %>%
+  pairwise_wilcox_test({{ pivot.value }} ~ {{ pivot.key }}, detailed = T)
+
+df <- pwc.long[,c(".y.","{{ iv1 }}:{{ iv2 }}","group1","group2","n1","n2","estimate",
+                  "statistic","p.adj","p.adj.signif")]
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+### Plot to compare pre- and post-test
+
+```{r, dpi=300, fig.width={{ pfig.width }}, fig.height={{ pfig.height }}}
+pwc.long <- group_by(pdat.long, {{ iv1 }}, {{ iv2 }}) %>%
+  pairwise_wilcox_test({{ pivot.value }} ~ {{ pivot.key }}, detailed = T)
+
+stat.test <- pwc.long %>% add_xy_position(x = "{{ pivot.key }}", fun = "mean_ci")
+sidx = which(stat.test$p.adj.signif != "ns")
+stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+
+gg <- ggline(
+  pdat.long, x = "{{ pivot.key }}", y = "{{ pivot.value }}",
+  color = "{{ iv2 }}", linetype = "{{ iv2 }}", shape = "{{ iv2 }}", size = 1.5,
+  facet.by = "{{ iv1 }}", add = c("mean_ci"),
+  position = position_dodge(width = 0.3), palette = color[["{{ iv2 }}"]])
+
+pdat.long$xj = jitter(as.numeric(pdat.long[["{{ pivot.key }}"]]), amount=.1)
+pdat.long$yj = jitter(pdat.long[["{{ pivot.value }}"]], amount = .01)
+
+gg + geom_point(
+  data = pdat.long, aes_string(x="xj",y="yj",colour="{{ iv2 }}"), size=0.5) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    position = position_dodge(width = 0.3), color = "{{ iv2 }}",
+    label = "{ p.adj } ({ p.adj.signif })") + xlab("") + ylab("") +
+  ylim(min(pdat.long$yj), max(pdat.long$yj)) +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+### New plot including percentagens in the differences
+
+
+```{r, dpi=300, fig.width={{ pfig.width }}, fig.height={{ pfig.height }}}
+stat.test <- pwc.long %>% add_xy_position(x = "{{ pivot.key }}", fun = "mean_ci")
+
+stat.test$r <- sapply(abs(stat.test$estimate)/{{ max.y }}, FUN = function(x) {
+   ifelse(x < 0.0001, "<1%", paste0(round(x*100,2), "%"))
+})
+
+gg <- ggline(
+  pdat.long{{ plot.filter }}, x = "{{ pivot.key }}", y = "{{ pivot.value }}",
+  color = "{{ iv2 }}", linetype = "{{ iv2 }}", shape = "{{ iv2 }}", size = 2,
+  facet.by = "{{ iv1 }}", add = c("mean_ci"),
+  position = position_dodge(width = 0.3), palette = color[["{{ iv2 }}"]]) +
+  stat_pvalue_manual(
+    stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+    color = "{{ iv2 }}",
+    label = "{ r } ({ p.adj.signif })") + xlab("") + ylab("")
+
+gg + theme(strip.text = element_text(size = 14),
+           axis.text = element_text(size = 14))
+```
+
+
+## Scheirer and Wilcoxon PairWise comparisons for: *{{ pivot.value }} ~ {{ iv1 }}:{{ iv2 }}*
+
+
+```{r}
+sch <- lapply(lvars, FUN = function(x) {
+  scheirer.test(pdat, x, c("{{ iv1 }}","{{ iv2 }}"), as.table = T) 
+})
+df <- do.call(rbind.fill, sch)
+```
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+
+```{r}
+pwc <- lapply(lvars, FUN = function(x) {
+  list(
+    {{ iv1 }} = tryCatch(pairwise_wilcox_test(group_by(pdat, {{ iv2 }}),
+                                 as.formula(paste0(x," ~ {{ iv1 }}")), detailed = T)
+                         , error = function(e) NULL),
+    {{ iv2 }} = tryCatch(pairwise_wilcox_test(group_by(pdat, {{ iv1 }}),
+                                 as.formula(paste0(x," ~ {{ iv2 }}")), detailed = T)
+                         , error = function(e) NULL)
+  )
+})
+
+df <- do.call(rbind.fill, lapply(pwc, FUN =  function(x) {
+  do.call(rbind.fill, x)
+}))
+
+ivs = c()
+if ("{{ iv1 }}" %in% colnames(df)) ivs = c(ivs, "{{ iv1 }}")
+if ("{{ iv2 }}" %in% colnames(df)) ivs = c(ivs, "{{ iv2 }}")
+df <- df[,c(".y.",ivs,"group1","group2","n1","n2","estimate",
+            "statistic","p.adj","p.adj.signif")]
+```
+
+
+```{r, echo=FALSE, purl=FALSE}
+kable(df)
+```
+
+### Plot to compare results from pre and post
+
+```{r}
+plots <- lapply(lvars, FUN = function(y) {
+  livs = list("{{ iv1 }}", "{{ iv2 }}")
+  names(livs) = unlist(livs)
+  lapply(livs, FUN = function(x) {
+    iv2 = setdiff(names(livs), x)
+    if (!is.null(pwc[[y]][[iv2]])) {
+      stat.test <- pwc[[y]][[iv2]] %>% add_xy_position(x = x, fun = "max")
+      sidx = which(stat.test$p.adj.signif != "ns")
+      stat.test$y.position[sidx] <- stat.test$y.position[sidx] + y.position.min * (1:length(sidx))
+      
+      ggboxplot(pdat, x = x, y = y, fill = iv2, palette = color[[iv2]]) +
+        stat_pvalue_manual(stat.test, tip.length = 0, hide.ns = T, label.size = 5,
+                           label="{ p.adj } ({ p.adj.signif })") + xlab("")
+    }
+  })
+})
+```
+
+```{r, dpi=300, fig.width={{ fig.width*2 }}, fig.height={{ fig.height }}}
+if (!is.null(plots[["{{ dv.pre }}"]][["{{ iv1 }}"]]) &&
+    !is.null(plots[["{{ dv.pos }}"]][["{{ iv1 }}"]])) {
+  egg::ggarrange(plots[["{{ dv.pre }}"]][["{{ iv1 }}"]],
+                 plots[["{{ dv.pos }}"]][["{{ iv1 }}"]], nrow = 1)  
+}
+```
+
+
+```{r, dpi=300, fig.width={{ fig.width*2 }}, fig.height={{ fig.height }}}
+if (!is.null(plots[["{{ dv.pre }}"]][["{{ iv2 }}"]]) &&
+    !is.null(plots[["{{ dv.pos }}"]][["{{ iv2 }}"]])) {
+  egg::ggarrange(plots[["{{ dv.pre }}"]][["{{ iv2 }}"]],
+                 plots[["{{ dv.pos }}"]][["{{ iv2 }}"]], nrow = 1)
+}
+```
+
+### Plot to compare differences (1st)
+
+```{r, dpi=300, fig.width={{ fig.width }}, fig.height={{ fig.height }}}
+psch = sch[["{{ dv.dif }}"]]
+idx = which(psch$Effect == "{{ iv1 }}:{{ iv2 }}") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["{{ dv.dif }}"]][["{{ iv1 }}"]]))
+  plots[["{{ dv.dif }}"]][["{{ iv1 }}"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["{{ dv.dif }}"]][["{{ iv2 }}"]])) +
+    ylab("{{ pivot.value }} (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+### Plot to compare differences (1st)
+
+
+```{r, dpi=300, fig.width={{ fig.width }}, fig.height={{ fig.height }}}
+psch = sch[["{{ dv.dif }}"]]
+idx = which(psch$Effect == "{{ iv1 }}:{{ iv2 }}") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+if (!is.null(plots[["{{ dv.dif }}"]][["{{ iv2 }}"]]))
+  plots[["{{ dv.dif }}"]][["{{ iv2 }}"]] +
+    labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+          dof.res, ")=", statistic, pval),
+         caption = get_pwc_label(pwc[["{{ dv.dif }}"]][["{{ iv1 }}"]])) +
+    ylab("{{ pivot.value }} (dif)") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
+### Plot to compare differences using in one comparison
+
+```{r, dpi=300, fig.width={{ pfig.width }}, fig.height={{ pfig.height }}}
+psch = sch[["{{ dv.dif }}"]]
+idx = which(psch$Effect == "{{ iv1 }}:{{ iv2 }}") 
+
+dof = floor(as.double(psch$Df[idx]))
+dof.res = floor(as.double(psch$Df[which(psch$Effect == "Residuals")]))
+statistic = round(as.double(psch$H[idx]), 3)
+p = round(as.double(psch[["p.value"]][idx]), 3)
+pval = ifelse(p < 0.001,paste0(" , p<0.001"),paste0(" , p=",p))
+
+dodge = 0.08
+x.seg = sum(!is.na(unique(pdat[["{{ iv2 }}"]])))-1
+d.seg = -1*dodge*x.seg/2
+
+
+pwc1 = pwc[["{{ dv.dif }}"]][["{{ iv1 }}"]]
+pwc2 = pwc1[pwc[["{{ dv.dif }}"]][["{{ iv1 }}"]]$p.adj.signif != "ns",]
+
+if (!is.null(pwc1) && nrow(pwc2) > 0) {
+  pwc2 = rstatix::add_xy_position(pwc2, dodge = dodge, fun = "mean_ci")
+  
+  for (f in sort(unique(pdat[["{{ iv2 }}"]]))) {
+    fbool <- pwc2[["{{ iv2 }}"]] == f
+    if (sum(fbool) > 0) {
+      pwc2$xmin[which(fbool)] <- pwc2$xmin[which(fbool)]+d.seg
+      pwc2$xmax[which(fbool)] <- pwc2$xmax[which(fbool)]+d.seg
+    }
+    d.seg <- d.seg + dodge
+  }
+} 
+
+pwc1g <- pwc[["{{ dv.dif }}"]][["{{ iv2 }}"]]
+pwc2g <- pwc1g[pwc[["{{ dv.dif }}"]][["{{ iv2 }}"]]$p.adj.signif != "ns",]
+
+if (!is.null(pwc1g) && nrow(pwc2g) > 0) {
+  pwc2g$y.position <- sapply(seq(1,nrow(pwc2g)), FUN = function(i) {
+    rw <- as.list(pwc2g[i,])
+    resp = -Inf
+    for (atr2 in unique(pdat[["{{ iv2 }}"]])) {
+      idx = which(pdat[["{{ iv1 }}"]] == rw[["{{ iv1 }}"]] & pdat[["{{ iv2 }}"]] == atr2)
+      rmax = max(mean_ci(pdat[["{{ dv.dif }}"]][c(idx)]))
+      if (rmax > resp) resp <- rmax
+    }
+    return(resp)
+  })
+  pwc2g$xpos <- sapply(seq(1,nrow(pwc2g)), FUN = function(i) {
+    rw <- as.list(pwc2g[i,])
+    tmp <- add_x_position(pwc[["{{ dv.dif }}"]][["{{ iv1 }}"]])
+    min(tmp$xmin[which(tmp$group1 == rw[["{{ iv1 }}"]])],
+        tmp$xmax[which(tmp$group2 == rw[["{{ iv1 }}"]])])
+  })
+  pwc2g$xmin <- pwc2g$xpos - abs(dodge*x.seg/2) 
+  pwc2g$xmax <- pwc2g$xpos + abs(dodge*x.seg/2)
+}
+
+if (!is.null(pwc1) && nrow(pwc2) > 0) {
+  pwc2$r <- sapply(abs(pwc2$estimate)/1, FUN = function(x) {
+     ifelse(x < 0.0001, "<1%", paste0(round(x*100,2), "%"))
+  })
+}
+
+pd <- ggplot2::position_dodge(width = sum(!is.na(unique(pwc2[["{{ iv2 }}"]])))*dodge)
+
+lp <- ggpubr::ggline(pdat, x="{{ iv1 }}", y = "{{ dv.dif }}", color = "{{ iv2 }}", linetype = "{{ iv2 }}",
+                       palette = color[["{{ iv2 }}"]], plot_type='b', size=2,
+                       position = pd, add = "mean_ci", ylab = "")
+
+if (!is.null(pwc1) && nrow(pwc2) > 0)
+  lp <- lp + ggpubr::stat_pvalue_manual(pwc2, color = "{{ iv2 }}", linetype = "{{ iv2 }}",
+                                          hide.ns = T, tip.length = 0,
+                                          label = "{ r } ({ p.adj.signif })")
+
+if (!is.null(pwc1g) && nrow(pwc2g) > 0) {
+  y.pos.min = max(pwc2g$y.position)/10
+  if (nrow(pwc2) > 0)
+    y.pos.min = max(pwc2$y.position, pwc2g$y.position)/10
+  
+  pwc2g$r <- sapply(abs(pwc2g$estimate)/1, FUN = function(x) {
+     ifelse(x < 0.0001, "<1%", paste0(round(x*100,2), "%"))
+  })
+  pwc2g$y.position <- pwc2g$y.position + y.pos.min
+  
+  for (i in which(pwc2g$p.adj < 0.05)) {
+    x1 = pwc2g$xmin[i]
+    x2 = pwc2g$xmax[i]
+    y.pos = pwc2g$y.position[i]
+    label = pwc2g$p.adj.signif[i]
+    label = paste0(pwc2g$r[i]," (",label,")")
+    
+    lp <- lp + ggplot2::geom_segment(x = x1, y = y.pos, xend = x2, yend = y.pos) +
+      ggplot2::geom_text(x=(x1+x2)/2, y = y.pos+y.pos.min/3, label=label)
+  }
+}
+
+lp + labs(subtitle = paste0("Scheirer-Ray-Hare H(", dof, ",", 
+                            dof.res, ")=", statistic, pval),
+          caption = get_pwc_label(pwc[["{{ dv.dif }}"]][["{{ iv2 }}"]])) +
+  xlab("") + ylab("") +
+  theme(strip.text = element_text(size = 14),
+        axis.text = element_text(size = 14))
+```
+
+
