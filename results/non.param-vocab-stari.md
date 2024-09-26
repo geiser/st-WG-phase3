@@ -1095,9 +1095,6 @@ gg + geom_point(
         axis.text = element_text(size = 14))
 ```
 
-    ## Warning: Removed 1 row containing non-finite outside the scale range
-    ## (`stat_summary()`).
-
 ![](non.param-vocab-stari_files/figure-gfm/unnamed-chunk-36-1.png)<!-- -->
 
 ### New plot including percentagens in the differences
@@ -1500,6 +1497,9 @@ gg + geom_point(
   theme(strip.text = element_text(size = 14),
         axis.text = element_text(size = 14))
 ```
+
+    ## Warning: Removed 1 row containing non-finite outside the scale range
+    ## (`stat_summary()`).
 
 ![](non.param-vocab-stari_files/figure-gfm/unnamed-chunk-51-1.png)<!-- -->
 
@@ -2293,9 +2293,6 @@ gg + geom_point(
   theme(strip.text = element_text(size = 14),
         axis.text = element_text(size = 14))
 ```
-
-    ## Warning: Removed 1 row containing non-finite outside the scale range
-    ## (`stat_summary()`).
 
 ![](non.param-vocab-stari_files/figure-gfm/unnamed-chunk-81-1.png)<!-- -->
 

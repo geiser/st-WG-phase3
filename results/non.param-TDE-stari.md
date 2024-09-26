@@ -303,7 +303,7 @@ ggboxplot(pdat.long, x = "STARI.GROUP", y = "score",
                      label = "{ p.adj } ({ p.adj.signif })") + xlab("")
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
 
 ``` r
 stat.test <- pwc.long %>% add_xy_position(x = "time", fun = "mean_ci")
@@ -327,7 +327,14 @@ gg + geom_point(
         axis.text = element_text(size = 14))
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
+    ## Warning: `aes_string()` was deprecated in ggplot2 3.0.0.
+    ## ℹ Please use tidy evaluation idioms with `aes()`.
+    ## ℹ See also `vignette("ggplot2-in-packages")` for more information.
+    ## This warning is displayed once every 8 hours.
+    ## Call `lifecycle::last_lifecycle_warnings()` to see where this warning was
+    ## generated.
+
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
 
 ## Kruskal and Wilcoxon PairWise comparisons for: *score ~ STARI.GROUP*
 
@@ -380,7 +387,7 @@ plots <- lapply(lvars, FUN = function(y) {
 egg::ggarrange(plots[["score.pre"]], plots[["score.pos"]], nrow = 1)
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-15-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-15-1.png)<!-- -->
 
 ``` r
 plots[["score.dif"]] +
@@ -391,7 +398,7 @@ plots[["score.dif"]] +
         axis.text = element_text(size = 14))
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-16-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-16-1.png)<!-- -->
 
 # Two-way factor analysis for: *score ~ GROUP:SEXO*
 
@@ -445,7 +452,7 @@ ggboxplot(pdat.long, x = "STARI.GROUP:SEXO", y = "score",
                      label = "{ p.adj } ({ p.adj.signif })") + xlab("")
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-20-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-20-1.png)<!-- -->
 
 ``` r
 pwc.long <- group_by(pdat.long, STARI.GROUP, SEXO) %>%
@@ -474,7 +481,7 @@ gg + geom_point(
         axis.text = element_text(size = 14))
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-21-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-21-1.png)<!-- -->
 
 ## Scheirer and Wilcoxon PairWise comparisons for: *score ~ STARI.GROUP:SEXO*
 
@@ -565,7 +572,7 @@ if (!is.null(plots[["score.pre"]][["STARI.GROUP"]]) &&
 }
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-27-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-27-1.png)<!-- -->
 
 ``` r
 if (!is.null(plots[["score.pre"]][["SEXO"]]) &&
@@ -575,7 +582,7 @@ if (!is.null(plots[["score.pre"]][["SEXO"]]) &&
 }
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-28-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-28-1.png)<!-- -->
 
 ``` r
 psch = sch[["score.dif"]]
@@ -597,7 +604,7 @@ if (!is.null(plots[["score.dif"]][["STARI.GROUP"]]))
         axis.text = element_text(size = 14))
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-29-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-29-1.png)<!-- -->
 
 ``` r
 psch = sch[["score.dif"]]
@@ -619,7 +626,7 @@ if (!is.null(plots[["score.dif"]][["SEXO"]]))
         axis.text = element_text(size = 14))
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-30-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-30-1.png)<!-- -->
 
 # Two-way factor analysis for: *score ~ GROUP:ZONA*
 
@@ -673,7 +680,7 @@ ggboxplot(pdat.long, x = "STARI.GROUP:ZONA", y = "score",
                      label = "{ p.adj } ({ p.adj.signif })") + xlab("")
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-34-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-34-1.png)<!-- -->
 
 ``` r
 pwc.long <- group_by(pdat.long, STARI.GROUP, ZONA) %>%
@@ -702,7 +709,7 @@ gg + geom_point(
         axis.text = element_text(size = 14))
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-35-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-35-1.png)<!-- -->
 
 ## Scheirer and Wilcoxon PairWise comparisons for: *score ~ STARI.GROUP:ZONA*
 
@@ -793,7 +800,7 @@ if (!is.null(plots[["score.pre"]][["STARI.GROUP"]]) &&
 }
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-41-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-41-1.png)<!-- -->
 
 ``` r
 if (!is.null(plots[["score.pre"]][["ZONA"]]) &&
@@ -803,7 +810,7 @@ if (!is.null(plots[["score.pre"]][["ZONA"]]) &&
 }
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-42-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-42-1.png)<!-- -->
 
 ``` r
 psch = sch[["score.dif"]]
@@ -825,7 +832,7 @@ if (!is.null(plots[["score.dif"]][["STARI.GROUP"]]))
         axis.text = element_text(size = 14))
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-43-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-43-1.png)<!-- -->
 
 ``` r
 psch = sch[["score.dif"]]
@@ -847,7 +854,7 @@ if (!is.null(plots[["score.dif"]][["ZONA"]]))
         axis.text = element_text(size = 14))
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-44-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-44-1.png)<!-- -->
 
 # Two-way factor analysis for: *score ~ GROUP:COR.RACA*
 
@@ -913,7 +920,7 @@ ggboxplot(pdat.long, x = "STARI.GROUP:COR.RACA", y = "score",
                      label = "{ p.adj } ({ p.adj.signif })") + xlab("")
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-48-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-48-1.png)<!-- -->
 
 ``` r
 pwc.long <- group_by(pdat.long, STARI.GROUP, COR.RACA) %>%
@@ -942,7 +949,7 @@ gg + geom_point(
         axis.text = element_text(size = 14))
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-49-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-49-1.png)<!-- -->
 
 ## Scheirer and Wilcoxon PairWise comparisons for: *score ~ STARI.GROUP:COR.RACA*
 
@@ -1033,7 +1040,7 @@ if (!is.null(plots[["score.pre"]][["STARI.GROUP"]]) &&
 }
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-55-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-55-1.png)<!-- -->
 
 ``` r
 if (!is.null(plots[["score.pre"]][["COR.RACA"]]) &&
@@ -1043,7 +1050,7 @@ if (!is.null(plots[["score.pre"]][["COR.RACA"]]) &&
 }
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-56-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-56-1.png)<!-- -->
 
 ``` r
 psch = sch[["score.dif"]]
@@ -1065,7 +1072,7 @@ if (!is.null(plots[["score.dif"]][["STARI.GROUP"]]))
         axis.text = element_text(size = 14))
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-57-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-57-1.png)<!-- -->
 
 ``` r
 psch = sch[["score.dif"]]
@@ -1087,7 +1094,7 @@ if (!is.null(plots[["score.dif"]][["COR.RACA"]]))
         axis.text = element_text(size = 14))
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-58-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-58-1.png)<!-- -->
 
 # Two-way factor analysis for: *score ~ GROUP:LOCAL*
 
@@ -1141,7 +1148,7 @@ ggboxplot(pdat.long, x = "STARI.GROUP:LOCAL", y = "score",
                      label = "{ p.adj } ({ p.adj.signif })") + xlab("")
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-62-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-62-1.png)<!-- -->
 
 ``` r
 pwc.long <- group_by(pdat.long, STARI.GROUP, LOCAL) %>%
@@ -1170,7 +1177,7 @@ gg + geom_point(
         axis.text = element_text(size = 14))
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-63-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-63-1.png)<!-- -->
 
 ## Scheirer and Wilcoxon PairWise comparisons for: *score ~ STARI.GROUP:LOCAL*
 
@@ -1261,7 +1268,7 @@ if (!is.null(plots[["score.pre"]][["STARI.GROUP"]]) &&
 }
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-69-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-69-1.png)<!-- -->
 
 ``` r
 if (!is.null(plots[["score.pre"]][["LOCAL"]]) &&
@@ -1271,7 +1278,7 @@ if (!is.null(plots[["score.pre"]][["LOCAL"]]) &&
 }
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-70-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-70-1.png)<!-- -->
 
 ``` r
 psch = sch[["score.dif"]]
@@ -1293,7 +1300,7 @@ if (!is.null(plots[["score.dif"]][["STARI.GROUP"]]))
         axis.text = element_text(size = 14))
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-71-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-71-1.png)<!-- -->
 
 ``` r
 psch = sch[["score.dif"]]
@@ -1315,7 +1322,7 @@ if (!is.null(plots[["score.dif"]][["LOCAL"]]))
         axis.text = element_text(size = 14))
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-72-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-72-1.png)<!-- -->
 
 # Two-way factor analysis for: *score ~ GROUP:SERIE*
 
@@ -1373,7 +1380,7 @@ ggboxplot(pdat.long, x = "STARI.GROUP:SERIE", y = "score",
                      label = "{ p.adj } ({ p.adj.signif })") + xlab("")
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-76-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-76-1.png)<!-- -->
 
 ``` r
 pwc.long <- group_by(pdat.long, STARI.GROUP, SERIE) %>%
@@ -1402,7 +1409,7 @@ gg + geom_point(
         axis.text = element_text(size = 14))
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-77-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-77-1.png)<!-- -->
 
 ## Scheirer and Wilcoxon PairWise comparisons for: *score ~ STARI.GROUP:SERIE*
 
@@ -1529,7 +1536,7 @@ if (!is.null(plots[["score.pre"]][["STARI.GROUP"]]) &&
 }
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-83-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-83-1.png)<!-- -->
 
 ``` r
 if (!is.null(plots[["score.pre"]][["SERIE"]]) &&
@@ -1539,7 +1546,7 @@ if (!is.null(plots[["score.pre"]][["SERIE"]]) &&
 }
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-84-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-84-1.png)<!-- -->
 
 ``` r
 psch = sch[["score.dif"]]
@@ -1561,7 +1568,7 @@ if (!is.null(plots[["score.dif"]][["STARI.GROUP"]]))
         axis.text = element_text(size = 14))
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-85-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-85-1.png)<!-- -->
 
 ``` r
 psch = sch[["score.dif"]]
@@ -1583,7 +1590,7 @@ if (!is.null(plots[["score.dif"]][["SERIE"]]))
         axis.text = element_text(size = 14))
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-86-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-86-1.png)<!-- -->
 
 # Two-way factor analysis for: *score ~ GROUP:ESCOLA*
 
@@ -1643,7 +1650,7 @@ ggboxplot(pdat.long, x = "STARI.GROUP:ESCOLA", y = "score",
                      label = "{ p.adj } ({ p.adj.signif })") + xlab("")
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-90-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-90-1.png)<!-- -->
 
 ``` r
 pwc.long <- group_by(pdat.long, STARI.GROUP, ESCOLA) %>%
@@ -1672,7 +1679,7 @@ gg + geom_point(
         axis.text = element_text(size = 14))
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-91-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-91-1.png)<!-- -->
 
 ## Scheirer and Wilcoxon PairWise comparisons for: *score ~ STARI.GROUP:ESCOLA*
 
@@ -1826,7 +1833,7 @@ if (!is.null(plots[["score.pre"]][["STARI.GROUP"]]) &&
 }
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-97-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-97-1.png)<!-- -->
 
 ``` r
 if (!is.null(plots[["score.pre"]][["ESCOLA"]]) &&
@@ -1836,7 +1843,7 @@ if (!is.null(plots[["score.pre"]][["ESCOLA"]]) &&
 }
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-98-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-98-1.png)<!-- -->
 
 ``` r
 psch = sch[["score.dif"]]
@@ -1858,7 +1865,7 @@ if (!is.null(plots[["score.dif"]][["STARI.GROUP"]]))
         axis.text = element_text(size = 14))
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-99-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-99-1.png)<!-- -->
 
 ``` r
 psch = sch[["score.dif"]]
@@ -1880,4 +1887,4 @@ if (!is.null(plots[["score.dif"]][["ESCOLA"]]))
         axis.text = element_text(size = 14))
 ```
 
-![](/mnt/c/Users/geise/OneDrive/Workspace/Stari-WG-Fase3/results/non.param-TDE-stari_files/figure-gfm/unnamed-chunk-100-1.png)<!-- -->
+![](non.param-TDE-stari_files/figure-gfm/unnamed-chunk-100-1.png)<!-- -->
